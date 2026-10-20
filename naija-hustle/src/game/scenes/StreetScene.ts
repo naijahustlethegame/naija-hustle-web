@@ -21,10 +21,11 @@ export class StreetScene {
   private state: State = "idle"; private target: Entity | null = null;
   private stun = 0; private inv = 0; private t = 0;
   private eventT = 20; private banner: (DiceEvent & { t: number }) | null = null;
+  private roundT = 90; private ended = false;
   money = 0; hits = 0;
   private onTap = (e: PointerEvent) => this.tap(e);
 
-  constructor(private canvas: HTMLCanvasElement, private opts: { demo: boolean; avatar: AvatarConfig }) {
+  constructor(private canvas: HTMLCanvasElement, private opts: { demo: boolean; avatar: AvatarConfig; onEnd?: (score: number) => void }) {
     this.ctx = canvas.getContext("2d")!;
     const dpr = Math.min(window.devicePixelRatio || 1, 2); // cap DPR to protect low-end phones
     canvas.width = W * dpr; canvas.height = H * dpr;
@@ -65,6 +66,9 @@ export class StreetScene {
 
   private update(dt: number) {
     this.t += dt;
+    if (!this.opts.demo && !this.ended && (this.roundT -= dt) <= 0) {
+      this.ended = true; this.roundT = 0; this.draw(); this.loop.stop(); this.opts.onEnd?.(this.money); return;
+    }
     // spawning
     LANES.forEach((l, i) => {
       this.spawnT[i] -= dt;
@@ -154,5 +158,6 @@ export class StreetScene {
     c.textAlign = "left";
     c.fillStyle = "#2a2118"; c.beginPath(); c.roundRect(14, H - 50, 190, 36, 12); c.fill();
     c.fillStyle = "#ffe45c"; c.font = "bold 20px sans-serif"; c.fillText(`₦ ${this.money.toLocaleString()}`, 28, H - 25);
+    if (!this.opts.demo) { c.font = "bold 18px sans-serif"; c.fillText(`${Math.ceil(this.roundT)}s`, 150, H - 25); }
   }
 }
