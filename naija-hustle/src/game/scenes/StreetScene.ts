@@ -1,6 +1,7 @@
 import { drawAvatar, type AvatarConfig } from "../avatar/avatar";
 import { SPEC, drawVehicle, drawWalker, renderBackdrop } from "../engine/draw";
 import { Loop } from "../engine/loop";
+import { rollDice, type DiceEvent } from "../engine/events";
 import { H, W, type Entity, type Kind } from "../engine/types";
 
 const TOP = 150, BOTTOM = 360;
@@ -19,6 +20,7 @@ export class StreetScene {
   private px = W / 2; private py = HOME_Y;
   private state: State = "idle"; private target: Entity | null = null;
   private stun = 0; private inv = 0; private t = 0;
+  private eventT = 20; private banner: (DiceEvent & { t: number }) | null = null;
   money = 0; hits = 0;
   private onTap = (e: PointerEvent) => this.tap(e);
 
@@ -101,6 +103,12 @@ export class StreetScene {
         if (Math.abs(this.px - e.x) < e.w / 2 + 8 && Math.abs(this.py - 10 - e.y) < e.h / 2 + 12) { this.hit(); break; }
       }
     }
+    this.eventT -= dt;
+    if (this.eventT <= 0 && !this.opts.demo) {
+      const ev = rollDice(); this.money = Math.max(0, this.money + ev.delta);
+      this.banner = { ...ev, t: 3.5 }; this.eventT = 20 + Math.random() * 15;
+    }
+    if (this.banner && (this.banner.t -= dt) <= 0) this.banner = null;
     for (const p of this.pops) p.t += dt;
     this.pops = this.pops.filter((p) => p.t < 1);
 
@@ -135,7 +143,15 @@ export class StreetScene {
     c.globalAlpha = 1;
     c.font = "bold 20px sans-serif"; c.textAlign = "center";
     for (const p of this.pops) { c.globalAlpha = 1 - p.t; c.fillStyle = p.color; c.fillText(p.text, p.x, p.y - p.t * 30); }
-    c.globalAlpha = 1; c.textAlign = "left";
+    c.globalAlpha = 1;
+    if (this.banner) {
+      const b = this.banner;
+      c.fillStyle = b.good ? "#0f8f4f" : b.delta < 0 ? "#c0392b" : "#2a2118";
+      c.beginPath(); c.roundRect(W / 2 - 230, 150 - 120, 460, 56, 14); c.fill();
+      c.fillStyle = "#fff"; c.font = "bold 18px sans-serif"; c.textAlign = "center";
+      c.fillText(`🎲 ${b.die}: ${b.text}${b.delta ? ` (${b.delta > 0 ? "+" : "-"}₦${Math.abs(b.delta)})` : ""}`, W / 2, 150 - 86);
+    }
+    c.textAlign = "left";
     c.fillStyle = "#2a2118"; c.beginPath(); c.roundRect(14, H - 50, 190, 36, 12); c.fill();
     c.fillStyle = "#ffe45c"; c.font = "bold 20px sans-serif"; c.fillText(`₦ ${this.money.toLocaleString()}`, 28, H - 25);
   }
