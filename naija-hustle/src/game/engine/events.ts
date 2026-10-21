@@ -1,21 +1,23 @@
-export type DiceEvent = { die: number; text: string; delta: number; good: boolean };
+/** One dice roll at the start of every red light. 1-2 bad, 3-4 normal, 5-6 good. */
+export type RoundEventKind = "normal" | "rain" | "lastma" | "sun" | "goslow";
+export type RoundEvent = { die: number; kind: RoundEventKind; title: string; text: string; good: boolean };
 
-const BAD = [
-  { text: "Landlord is knocking. Pay up.", delta: -120 },
-  { text: "Checkpoint “settlement”.", delta: -90 },
-  { text: "Wrong change given.", delta: -60 },
-];
-const MID = [{ text: "Quiet hour. Nothing happens.", delta: 0 }, { text: "Rain drizzle, traffic slows.", delta: 0 }];
-const GOOD = [
-  { text: "Customer tipped you!", delta: 100 },
-  { text: "Found ₦200 near the stall.", delta: 200 },
-  { text: "Light came back, sales up!", delta: 80 },
-];
 const pick = <T,>(a: T[]) => a[Math.floor(Math.random() * a.length)];
 
-/** 1-2 bad, 3-4 neutral, 5-6 good. */
-export function rollDice(): DiceEvent {
+const BAD: Omit<RoundEvent, "die">[] = [
+  { kind: "lastma", title: "LASTMA!", text: "Task force grabs 2 items from your tray.", good: false },
+  { kind: "rain", title: "Rain dey fall", text: "Windows go up. Fewer people will buy.", good: false },
+];
+const NORMAL: Omit<RoundEvent, "die">[] = [
+  { kind: "normal", title: "Normal hustle", text: "Nothing special. Work the light.", good: false },
+];
+const GOOD: Omit<RoundEvent, "die">[] = [
+  { kind: "sun", title: "Hot sun", text: "Everybody wants water and cold drinks.", good: true },
+  { kind: "goslow", title: "Go-slow", text: "Traffic is stuck. The light runs 6 seconds longer.", good: true },
+];
+
+export function rollRoundEvent(): RoundEvent {
   const die = 1 + Math.floor(Math.random() * 6);
-  const pool = die <= 2 ? BAD : die <= 4 ? MID : GOOD;
-  return { die, good: die >= 5, ...pick(pool) };
+  const pool = die <= 2 ? BAD : die <= 4 ? NORMAL : GOOD;
+  return { die, ...pick(pool) };
 }
