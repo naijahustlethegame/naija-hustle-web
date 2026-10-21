@@ -1,11 +1,15 @@
 "use client";
+import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { bankPlayer, loadAvatar, loadSave } from "@/lib/storage";
 import { CAPACITY, ITEMS, ITEM_IDS, naira } from "@/game/engine/items";
 import { JUNCTION_LIST } from "@/game/engine/junctions";
 import type { JunctionScene, Snapshot } from "@/game/scenes/JunctionScene";
 
-/** The street. With `demo` it plays itself (homepage). Otherwise you play, with a shop and summary below. */
+/**
+ * The street. With `demo` a bot plays it on the homepage. Otherwise the light cycles by itself:
+ * pick a junction, restock, press Play and you walk on at whatever light is showing.
+ */
 export default function GameView({ demo = false }: { demo?: boolean }) {
   const ref = useRef<HTMLCanvasElement>(null);
   const [scene, setScene] = useState<JunctionScene | null>(null);
@@ -46,34 +50,28 @@ export default function GameView({ demo = false }: { demo?: boolean }) {
 }
 
 function Controls({ scene, snap }: { scene: JunctionScene; snap: Snapshot }) {
-  if (snap.phase === "red" || snap.phase === "yellow" || snap.phase === "green") {
+  if (snap.playing) {
     return (
-      <p className="hint">
-        Tap a stopped car to run to it. A hand out, or a bubble above the car, means a chance.
-        Be off the road before the light goes green.
-      </p>
-    );
-  }
-
-  if (snap.phase === "summary" && snap.summary) {
-    const s = snap.summary;
-    return (
-      <section className="panel" aria-label="Round summary">
-        <h2>Light turned green at {s.junction}</h2>
-        <p className="event">{s.event.title}: {s.event.text}</p>
-        <dl className="stats">
-          <div><dt>Earned</dt><dd className={s.earned < 0 ? "bad" : ""}>{naira(s.earned)}</dd></div>
-          <div><dt>Sales</dt><dd>{s.sales}</dd></div>
-          <div><dt>Turned you down</dt><dd>{s.rejects}</dd></div>
-          <div><dt>Knocked down</dt><dd>{s.hits}</dd></div>
-          <div><dt>Best streak</dt><dd>{s.bestStreak}</dd></div>
-          <div><dt>Left on your tray</dt><dd>{s.itemsLeft}</dd></div>
-        </dl>
+      <section className="panel" aria-label="On the road">
+        <div className="panel-head">
+          <h2>On the road</h2>
+          <p className="money">You have <strong>{naira(snap.money)}</strong></p>
+        </div>
+        <p className="tray" aria-live="polite">
+          <strong>On your tray: {snap.carrying}</strong>
+          {ITEM_IDS.map((id) => (
+            <span key={id} className={snap.stock[id] === 0 ? "gone" : ""}>
+              <span aria-hidden>{ITEMS[id].icon}</span> {snap.stock[id]}<span className="sr"> {ITEMS[id].name}</span>
+            </span>
+          ))}
+        </p>
+        {snap.outOfStock && <p className="why" role="status">Your tray is empty. Leave the road to restock.</p>}
+        <p className="hint">
+          The light never stops, so sell while it is red. Tap a stopped car to run to it. A hand out, or a bubble
+          above the car, means a chance. Tap the pavement to run back before the light goes green.
+        </p>
         <div className="btns">
-          <button className="btn" onClick={() => scene.startRound()} disabled={snap.carrying === 0}>
-            {snap.carrying === 0 ? "Tray is empty" : "Wait for the next red"}
-          </button>
-          <button className="btn alt" onClick={() => scene.toPrep()}>Restock or change junction</button>
+          <button className="btn alt" onClick={() => scene.leave()}>Leave the junction</button>
         </div>
       </section>
     );
@@ -97,7 +95,7 @@ function Controls({ scene, snap }: { scene: JunctionScene; snap: Snapshot }) {
       </div>
 
       <div className="panel-head">
-        <h2>Stock up at Mama Put</h2>
+        <h2>Restock</h2>
         <p className="money">Carrying <strong>{snap.carrying}</strong> of {CAPACITY}</p>
       </div>
       <ul className="shop">
@@ -114,9 +112,10 @@ function Controls({ scene, snap }: { scene: JunctionScene; snap: Snapshot }) {
         ))}
       </ul>
       <div className="btns">
-        <button className="btn" onClick={() => scene.startRound()} disabled={snap.carrying === 0}>
-          {snap.carrying === 0 ? "Buy something to sell first" : "Wait for the red light"}
+        <button className="btn" onClick={() => scene.play()} disabled={snap.carrying === 0}>
+          {snap.carrying === 0 ? "Buy something to sell first" : "Play"}
         </button>
+        <Link className="btn alt" href="/restock">Run to the market for stock</Link>
       </div>
     </section>
   );

@@ -18,6 +18,7 @@ export default function Nav() {
       <nav aria-label="Main">
         <Link href="/play">Play</Link>
         <Link href="/sellers">Sellers</Link>
+        <Link href="/restock">Restock</Link>
         <Link href="/customize">Style</Link>
       </nav>
     </header>

@@ -8,3 +8,14 @@ export const LIGHT_X = 922;
 export const PLAYER_SPEED = 250;
 /** Anton is bundled in the app (see globals.css); the rest are fallbacks. */
 export const DISPLAY_FONT = "Anton, Impact, 'Arial Narrow Bold', 'Arial Black', sans-serif";
+
+/**
+ * The three billboards behind the road. Each face is a sellable ad space (3:1, like a real roadside board).
+ * Pass an image per id to renderBackdrop to fill one; blank for now.
+ */
+export const AD_SLOTS = [
+  { id: "ad1", x: 24, y: 60, w: 240, h: 80 },
+  { id: "ad2", x: 328, y: 60, w: 240, h: 80 },
+  { id: "ad3", x: 632, y: 60, w: 240, h: 80 },
+] as const;
+export type AdSlotId = (typeof AD_SLOTS)[number]["id"];

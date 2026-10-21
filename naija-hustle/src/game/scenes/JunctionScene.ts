@@ -1,16 +1,18 @@
 import { drawAvatar, type AvatarConfig } from "../avatar/avatar";
 import { NO_LINES, PUSH_FAIL_LINES, SPEC, YES_LINES, makeBuyer, pickColor, pickKind } from "../engine/buyers";
-import { drawLight, drawVehicle, renderBackdrop, type LightState, type VehView } from "../engine/draw";
+import { WARN, lightAt, type LightPhase } from "../engine/clock";
+import { drawLight, drawVehicle, renderBackdrop, type VehView } from "../engine/draw";
 import { rollRoundEvent, type RoundEvent } from "../engine/events";
 import { CAPACITY, ITEMS, ITEM_IDS, countStock, emptyStock, naira } from "../engine/items";
 import { JUNCTIONS, JUNCTION_LIST, type JunctionId } from "../engine/junctions";
 import { BOTTOM, DISPLAY_FONT, HOME_Y, LANE_Y, PLAYER_SPEED, STOP_X, TOP } from "../engine/layout";
 import { Loop } from "../engine/loop";
+import { hashString, mulberry32, type Rng } from "../engine/rng";
 import { H, W, type Buyer, type ItemId, type Stock } from "../engine/types";
 
-export type Phase = "prep" | "red" | "yellow" | "green" | "summary";
+export type Phase = LightPhase;
 type VState = "arriving" | "stopped" | "leaving";
-type PState = "idle" | "running" | "haggle" | "pause" | "fleeing";
+type PState = "idle" | "running" | "haggle" | "pause" | "walk";
 
 type Veh = VehView & {
   lane: number; slotX: number; vx: number; st: VState; buyer: Buyer;
@@ -18,62 +20,70 @@ type Veh = VehView & {
 };
 type Pop = { x: number; y: number; t: number; text: string; color: string };
 type Haggle = { v: Veh; t: number; dur: number };
+type Stats = { sales: number; rejects: number; hits: number; earned: number; bestStreak: number };
 
-export type RoundSummary = {
-  junction: string; event: RoundEvent; sales: number; rejects: number; hits: number;
-  earned: number; bestStreak: number; itemsLeft: number;
-};
 export type Snapshot = {
-  phase: Phase; money: number; stock: Stock; carrying: number;
-  junction: JunctionId; summary: RoundSummary | null;
+  playing: boolean; phase: Phase; money: number; stock: Stock; carrying: number;
+  junction: JunctionId; outOfStock: boolean;
 };
 type Opts = {
   demo: boolean; avatar: AvatarConfig; money?: number; stock?: Stock;
   onBank?: (money: number, stock: Stock) => void;
+  /** Wall clock in ms. Only tests pass this. */
+  clock?: () => number;
 };
 
-const WARN = 2.2;          // yellow warning, seconds
 const HAGGLE_SECS = 2.4;
 const rand = (a: number, b: number) => a + Math.random() * (b - a);
-const randInt = (a: number, b: number) => Math.floor(rand(a, b + 1));
 const pickOne = <T,>(a: T[]) => a[Math.floor(Math.random() * a.length)];
 const groundOf = (v: { y: number; h: number }) => v.y + v.h / 2;
+const zero = (): Stats => ({ sales: 0, rejects: 0, hits: 0, earned: 0, bestStreak: 0 });
 
+/**
+ * One junction. The light is driven by the wall clock (see engine/clock.ts), so it keeps cycling
+ * by itself: red, amber, green, red. You press Play when you are ready and join whatever light is on.
+ */
 export class JunctionScene {
   private ctx: CanvasRenderingContext2D;
   private loop: Loop;
   private bgs: Partial<Record<JunctionId, HTMLCanvasElement>> = {};
   private demo: boolean;
   private avatar: AvatarConfig;
+  private clockFn: () => number;
 
   // state
-  private phase: Phase = "prep";
+  private playing: boolean;
+  private phase: Phase = "green";
+  private cycle = -1; private needSync = true;
   private jid: JunctionId = "ojuelegba";
   private money: number; private stock: Stock;
   private vehs: Veh[] = []; private ambient: (VehView & { vx: number })[] = [];
   private pops: Pop[] = [];
   private nextId = 1; private t = 0; private ambT = [0.2, 0.9, 1.5];
-  private redLeft = 0; private redNominal = 1;
+  private redLeft = 0; private toRed = 0;
   private ev: RoundEvent | null = null; private bannerT = 0;
-  private streak = 0; private moneyAtStart = 0; private jumped = false;
-  private stats = { sales: 0, rejects: 0, hits: 0, bestStreak: 0 };
-  private summary: RoundSummary | null = null;
+  private streak = 0; private jumped = false;
+  private cur: Stats = zero(); private last: Stats | null = null; private lastT = 0;
+  private stockPulse = 0;
 
   // player
   private px = 300; private py = HOME_Y; private pstate: PState = "idle";
+  private dest = { x: 300, y: HOME_Y };
   private target: Veh | null = null; private haggle: Haggle | null = null;
-  private pauseT = 0; private inv = 0;
+  private pauseT = 0; private lockT = 0; private inv = 0;
 
   // bot (homepage demo)
-  private botT = 0.8; private botHT = 0; private botDemoJ = 0;
+  private botT = 0.8; private botHT = 0; private demoCycles = 0; private demoJ = 0;
 
   private listeners = new Set<() => void>();
   private snap: Snapshot;
   private onTap = (e: PointerEvent) => this.tap(e);
 
   constructor(private canvas: HTMLCanvasElement, private opts: Opts) {
-    this.demo = opts.demo; this.avatar = opts.avatar;
+    this.demo = opts.demo; this.avatar = opts.avatar; this.playing = opts.demo;
+    this.clockFn = opts.clock ?? (() => Date.now());
     this.money = opts.money ?? 0; this.stock = { ...emptyStock(), ...(opts.stock ?? {}) };
+    if (this.demo) this.stock = { water: 6, drink: 3, snack: 3, gadget: 2 };
     this.ctx = canvas.getContext("2d")!;
     const dpr = Math.min(window.devicePixelRatio || 1, 2); // cap DPR to protect low-end phones
     canvas.width = W * dpr; canvas.height = H * dpr;
@@ -85,14 +95,18 @@ export class JunctionScene {
 
   start() { this.loop.start(); }
   pause() { this.loop.stop(); }
-  resume() { this.loop.start(); }
+  resume() { this.loop.start(); this.needSync = true; } // the light moved on while we were away
   destroy() { this.loop.stop(); this.canvas.removeEventListener("pointerdown", this.onTap); this.listeners.clear(); }
 
   // ---------- React bridge ----------
   subscribe = (fn: () => void) => { this.listeners.add(fn); return () => { this.listeners.delete(fn); }; };
   getSnapshot = () => this.snap;
   private makeSnap(): Snapshot {
-    return { phase: this.phase, money: this.money, stock: { ...this.stock }, carrying: countStock(this.stock), junction: this.jid, summary: this.summary };
+    const n = countStock(this.stock);
+    return {
+      playing: this.playing, phase: this.phase, money: this.money, stock: { ...this.stock }, carrying: n,
+      junction: this.jid, outOfStock: this.playing && n === 0,
+    };
   }
   private notify() {
     this.snap = this.makeSnap();
@@ -100,62 +114,131 @@ export class JunctionScene {
     this.listeners.forEach((f) => f());
   }
 
-  // ---------- shop (only between rounds) ----------
+  // ---------- shop and entering (only while you are not on the road) ----------
   buy(id: ItemId) {
-    if (this.phase !== "prep" || this.money < ITEMS[id].cost || countStock(this.stock) >= CAPACITY) return;
+    if (this.playing || this.money < ITEMS[id].cost || countStock(this.stock) >= CAPACITY) return;
     this.money -= ITEMS[id].cost; this.stock[id]++; this.notify();
   }
   refund(id: ItemId) {
-    if (this.phase !== "prep" || this.stock[id] <= 0) return;
+    if (this.playing || this.stock[id] <= 0) return;
     this.money += ITEMS[id].cost; this.stock[id]--; this.notify();
   }
-  selectJunction(id: JunctionId) { if (this.phase === "prep") { this.jid = id; this.notify(); } }
-  toPrep() { if (this.phase === "summary") { this.phase = "prep"; this.notify(); } }
+  selectJunction(id: JunctionId) { if (!this.playing && id !== this.jid) { this.jid = id; this.needSync = true; this.notify(); } }
 
-  startRound(id?: JunctionId) {
-    if (this.phase !== "prep" && this.phase !== "summary") return;
-    if (id) this.jid = id;
-    const j = JUNCTIONS[this.jid];
-    this.ev = rollRoundEvent(); this.bannerT = 4;
-    if (this.ev.kind === "lastma") for (let i = 0; i < 2; i++) this.loseRandomItem();
-    this.redNominal = j.red + (this.ev.kind === "goslow" ? 6 : 0);
-    this.redLeft = this.redNominal * rand(0.9, 1.15);
-    this.stats = { sales: 0, rejects: 0, hits: 0, bestStreak: 0 };
-    this.streak = 0; this.moneyAtStart = this.money; this.summary = null; this.jumped = false;
-    this.pops = []; this.haggle = null; this.target = null; this.inv = 0;
-    this.px = 300; this.py = HOME_Y; this.pstate = "idle";
-    this.buildQueue();
-    this.phase = "red";
+  /** Join the junction. You walk on at whatever light is showing. */
+  play() {
+    if (this.playing || countStock(this.stock) === 0) return;
+    this.playing = true; this.streak = 0; this.cur = zero();
+    this.cancelAction(); this.px = 300; this.py = HOME_Y; this.pstate = "idle";
     this.notify();
   }
+  /** Walk off and go shopping. You cannot leave while the cars are moving and you are in the road. */
+  leave() {
+    if (!this.playing || this.demo) return;
+    if (this.phase === "green" && this.inRoad()) {
+      this.pops.push({ x: this.px, y: this.py - 80, t: 0, text: "Get off the road first!", color: "#ffd84a" });
+      return;
+    }
+    this.cancelAction(); this.playing = false; this.pstate = "idle"; this.streak = 0;
+    this.notify();
+  }
+
+  private cancelAction() { this.haggle = null; this.target = null; if (this.pstate === "running" || this.pstate === "haggle") this.pstate = "idle"; }
 
   private loseRandomItem(): ItemId | null {
     const have = ITEM_IDS.filter((k) => this.stock[k] > 0);
     if (!have.length) return null;
-    const k = pickOne(have); this.stock[k]--; return k;
+    const k = pickOne(have); this.stock[k]--; this.stockPulse = 0.8; return k;
   }
 
-  private buildQueue() {
+  // ---------- the light cycle ----------
+  private syncLight() {
+    const J = JUNCTIONS[this.jid];
+    const L = lightAt(this.clockFn(), J);
+    this.redLeft = L.redLeft; this.toRed = L.toRed;
+    if (this.needSync || L.cycle !== this.cycle) { this.beginCycle(L.cycle, L.local, L.phase); return; }
+    if (L.phase !== this.phase) {
+      this.phase = L.phase;
+      if (L.phase === "yellow") this.pops.push({ x: W / 2, y: 190, t: 0, text: "LIGHT DEY CHANGE!", color: "#ffd84a" });
+      if (L.phase === "green") this.goGreen();
+    }
+    // okada and keke riders jump the light, just before it turns green
+    if (this.phase === "yellow" && !this.jumped && L.redLeft <= 0.7) {
+      this.jumped = true;
+      for (const v of this.vehs) {
+        if (v.st !== "stopped" || (v.kind !== "okada" && v.kind !== "keke")) continue;
+        if (this.haggle?.v === v || this.target === v || Math.random() > 0.4) continue;
+        v.st = "leaving"; v.vx = 40;
+        this.pops.push({ x: v.x, y: v.y - v.h / 2 - 12, t: 0, text: "Oya go!", color: "#ffd84a" });
+      }
+    }
+  }
+
+  /** A new light starts, or we have just joined one that is already running. */
+  private beginCycle(cycle: number, local: number, phase: Phase) {
+    const rolled = !this.needSync && this.cycle >= 0 && cycle === this.cycle + 1;
+    this.needSync = false;
+    if (this.demo && rolled && ++this.demoCycles % 3 === 0) { // the homepage shows a different junction every few lights
+      this.demoJ = (this.demoJ + 1) % JUNCTION_LIST.length; this.jid = JUNCTION_LIST[this.demoJ].id; this.needSync = true;
+    }
+    this.cycle = cycle; this.phase = phase;
+    const rng = mulberry32(hashString(`${this.jid}:${cycle}`)); // everybody at this junction gets the same cars
+    this.ev = rollRoundEvent(rng);
+    this.cur = zero(); this.jumped = false; this.vehs = []; this.pops = [];
+    this.haggle = null; if (this.pstate === "running" || this.pstate === "haggle") this.pstate = "idle"; this.target = null;
+    if (phase !== "green") {
+      this.ambient = [];
+      this.buildQueue(rng);
+      let el = Math.min(local, 7); // joined late: the cars have already pulled up
+      while (el > 0) { const s = Math.min(0.05, el); this.updateTraffic(s); el -= s; }
+      if (this.playing || this.demo) this.bannerT = Math.max(0.1, 4 - local);
+      if (rolled && this.playing && this.ev.kind === "lastma") for (let i = 0; i < 2; i++) this.loseRandomItem();
+      if (rolled && this.playing) this.notify();
+    }
+  }
+
+  private buildQueue(rng: Rng) {
     const j = JUNCTIONS[this.jid];
-    this.vehs = []; this.ambient = [];
+    const extra = this.ev?.kind === "goslow" ? 1 : 0;
     LANE_Y.forEach((ly, lane) => {
-      const n = randInt(j.perLane[0], j.perLane[1]);
+      const n = j.perLane[0] + Math.floor(rng() * (j.perLane[1] - j.perLane[0] + 1)) + extra;
       let front = STOP_X - 6, leader: Veh | null = null;
       for (let k = 0; k < n; k++) {
-        const kind = pickKind(j.mix), s = SPEC[kind];
+        const kind = pickKind(j.mix, rng), s = SPEC[kind];
         const slotX = front - s.w / 2;
         if (slotX - s.w / 2 < 40) break;
         front = slotX - s.w / 2 - 16; // next car's bumper sits one gap behind this car
-        const buyer = makeBuyer(kind, this.ev?.kind ?? "normal");
+        const buyer = makeBuyer(kind, this.ev?.kind ?? "normal", rng);
         const y = ly + 20 - s.h / 2 - 2;
         const v: Veh = {
-          id: this.nextId++, kind, x: -s.w / 2 - 40 - k * 175 - Math.random() * 40, y, w: s.w, h: s.h,
-          tint: pickColor(kind), tell: buyer.tell, sold: false,
+          id: this.nextId++, kind, x: -s.w / 2 - 40 - k * 175 - rng() * 40, y, w: s.w, h: s.h,
+          tint: pickColor(kind, rng), tell: buyer.tell, sold: false,
           lane, slotX, vx: 0, st: "arriving", buyer, done: false, launchIn: 0, leader,
         };
         this.vehs.push(v); leader = v;
       }
     });
+  }
+
+  private goGreen() {
+    this.phase = "green";
+    if (this.haggle) { this.say(this.haggle.v, "Light don change!", "#fff"); this.haggle = null; }
+    this.target = null;
+    if (this.playing) {
+      if (this.pstate === "running" || this.pstate === "haggle") this.pstate = "idle";
+      if (this.inRoad() && this.pstate !== "walk") {
+        // you freeze for a moment before you run. That is what makes standing at the front car risky.
+        this.pstate = "pause"; this.pauseT = Math.max(this.pauseT, 0.55); this.lockT = Math.max(this.lockT, 0.55);
+        this.pops.push({ x: this.px, y: this.py - 70, t: 0, text: "Run!", color: "#7dffa8" });
+      }
+    }
+    // the front car goes first, the rest follow one by one
+    for (let lane = 0; lane < LANE_Y.length; lane++) {
+      const cars = this.vehs.filter((v) => v.lane === lane && v.st === "stopped").sort((a, b) => b.slotX - a.slotX);
+      cars.forEach((v, i) => { v.launchIn = 0.35 + i * 0.45 + Math.random() * 0.3; });
+    }
+    if (this.playing || this.demo) { this.last = { ...this.cur }; this.lastT = 7; }
+    this.notify();
   }
 
   // ---------- input ----------
@@ -164,15 +247,19 @@ export class JunctionScene {
     return { x: ((ev.clientX - r.left) / r.width) * W, y: ((ev.clientY - r.top) / r.height) * H };
   }
   private tap(ev: PointerEvent) {
+    if (!this.playing) return;
     const { x, y } = this.toCanvas(ev);
-    if (this.phase !== "red" && this.phase !== "yellow") return;
-    if (this.pstate === "haggle" && this.haggle) {
+    const selling = this.phase === "red" || this.phase === "yellow";
+    if (selling && this.pstate === "haggle" && this.haggle) {
       const r = this.haggleRects(this.haggle.v);
       const inRect = (b: { x: number; y: number; w: number; h: number }) => x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h;
-      if (inRect(r.sell)) this.settle(false); else if (inRect(r.push)) this.settle(true);
-      return;
+      if (inRect(r.sell)) { this.settle(false); return; }
+      if (inRect(r.push)) { this.settle(true); return; }
     }
-    if (this.pstate === "pause" || this.pstate === "fleeing") return;
+    if (this.lockT > 0) return; // frozen by the green light, or knocked down
+    // tapping the pavement sends you back there, out of the traffic
+    if (y > BOTTOM + 8) { this.retreat(x, y); return; }
+    if (!selling || this.pstate === "pause") return;
     const v = this.pickVeh(x, y);
     if (v) this.go(v);
   }
@@ -187,6 +274,13 @@ export class JunctionScene {
   }
   private go(v: Veh) { this.target = v; this.pstate = "running"; }
 
+  /** Run back to the pavement, dropping whatever you were doing. */
+  private retreat(x: number, y = HOME_Y) {
+    this.cancelAction();
+    this.dest = { x: Math.min(W - 30, Math.max(30, x)), y: Math.min(H - 70, Math.max(BOTTOM + 40, y)) };
+    this.pstate = "walk"; this.pauseT = 0;
+  }
+
   // ---------- buying ----------
   private arrive(v: Veh) {
     if (v.done || v.st !== "stopped") { this.pstate = "idle"; return; }
@@ -200,7 +294,7 @@ export class JunctionScene {
     this.haggle = { v, t: 0, dur: HAGGLE_SECS }; this.pstate = "haggle";
   }
   private reject(v: Veh, line: string) {
-    v.done = true; v.tell = "ignore"; this.streak = 0; this.stats.rejects++;
+    v.done = true; v.tell = "ignore"; this.streak = 0; this.cur.rejects++;
     this.say(v, line, "#ffb4ab");
     this.pstate = "pause"; this.pauseT = 0.45; this.haggle = null; this.target = null;
   }
@@ -215,12 +309,14 @@ export class JunctionScene {
     this.haggle = null; this.target = null;
     if (push && Math.random() > b.pushP) { this.reject(v, pickOne(PUSH_FAIL_LINES)); return; }
     const price = this.priceFor(v, push);
-    this.stock[b.want]--; this.money += price;
+    this.stock[b.want]--; this.money += price; this.stockPulse = 0.8;
     v.sold = true; v.done = true;
-    this.streak++; this.stats.sales++; this.stats.bestStreak = Math.max(this.stats.bestStreak, this.streak);
+    this.streak++; this.cur.sales++; this.cur.earned += price; this.cur.bestStreak = Math.max(this.cur.bestStreak, this.streak);
     this.pops.push({ x: v.x, y: v.y - v.h / 2 - 16, t: 0, text: `+${naira(price)}`, color: "#7dffa8" });
     this.say(v, pickOne(YES_LINES), "#fff", 22);
     this.pstate = "idle";
+    if (countStock(this.stock) === 0) this.pops.push({ x: this.px, y: this.py - 90, t: 0, text: "Tray empty!", color: "#ffd84a" });
+    this.notify();
   }
   private say(v: Veh, text: string, color: string, dy = 34) {
     this.pops.push({ x: v.x, y: v.y - v.h / 2 - dy, t: 0, text, color });
@@ -236,90 +332,41 @@ export class JunctionScene {
   }
 
   // ---------- simulation ----------
-  private light(): LightState { return this.phase === "red" ? "red" : this.phase === "yellow" ? "yellow" : "green"; }
   private inRoad() { return this.py > TOP - 8 && this.py < BOTTOM + 14; }
 
   private update(dt: number) {
     this.t += dt;
     if (this.bannerT > 0) this.bannerT -= dt;
+    if (this.lastT > 0) this.lastT -= dt;
+    if (this.stockPulse > 0) this.stockPulse -= dt;
     for (const p of this.pops) p.t += dt;
     this.pops = this.pops.filter((p) => p.t < 1.1);
-    this.inv -= dt;
+    this.inv -= dt; this.lockT -= dt;
+    this.syncLight();
     if (this.demo) this.botUpdate(dt);
-
-    if (this.phase === "prep" || this.phase === "summary") this.updateAmbient(dt);
-    if (this.phase === "red" || this.phase === "yellow") this.updateRed(dt);
-    if (this.phase === "green") this.updateGreen();
+    this.updateAmbient(dt);
     if (this.vehs.length) this.updateTraffic(dt);
-    this.updatePlayer(dt);
+    if (this.playing) this.updatePlayer(dt);
   }
 
+  /** Cars passing while nobody is stopped, so the road is never empty. They are never in your way. */
   private updateAmbient(dt: number) {
     const j = JUNCTIONS[this.jid];
-    LANE_Y.forEach((ly, i) => {
-      this.ambT[i] -= dt;
-      if (this.ambT[i] <= 0) {
-        const kind = pickKind(j.mix), s = SPEC[kind];
-        this.ambient.push({ id: this.nextId++, kind, x: -s.w, y: ly + 20 - s.h / 2 - 2, w: s.w, h: s.h, tint: pickColor(kind), tell: "ignore", sold: false, vx: rand(170, 250) });
-        this.ambT[i] = rand(1.2, 3);
-      }
-    });
+    if (this.vehs.length === 0 && this.toRed > 4.5) {
+      LANE_Y.forEach((ly, i) => {
+        this.ambT[i] -= dt;
+        if (this.ambT[i] <= 0) {
+          const kind = pickKind(j.mix), s = SPEC[kind];
+          this.ambient.push({ id: this.nextId++, kind, x: -s.w, y: ly + 20 - s.h / 2 - 2, w: s.w, h: s.h, tint: pickColor(kind), tell: "ignore", sold: false, vx: rand(230, 300) });
+          this.ambT[i] = rand(1, 2.4);
+        }
+      });
+    }
     for (const a of this.ambient) a.x += a.vx * dt;
     this.ambient = this.ambient.filter((a) => a.x < W + 120);
   }
 
-  private updateRed(dt: number) {
-    this.redLeft -= dt;
-    if (this.phase === "red" && this.redLeft <= WARN) {
-      this.phase = "yellow";
-      this.pops.push({ x: W / 2, y: 120, t: 0, text: "LIGHT DEY CHANGE!", color: "#ffd84a" });
-    }
-    // okada and keke riders jump the light, just before it turns green
-    if (this.phase === "yellow" && !this.jumped && this.redLeft <= 0.7) {
-      this.jumped = true;
-      for (const v of this.vehs) {
-        if (v.st !== "stopped" || (v.kind !== "okada" && v.kind !== "keke")) continue;
-        if (this.haggle?.v === v || this.target === v || Math.random() > 0.4) continue;
-        v.st = "leaving"; v.vx = 40;
-        this.pops.push({ x: v.x, y: v.y - v.h / 2 - 12, t: 0, text: "Oya go!", color: "#ffd84a" });
-      }
-    }
-    if (this.redLeft <= 0) this.goGreen();
-  }
-
-  private goGreen() {
-    this.phase = "green";
-    if (this.haggle) { this.say(this.haggle.v, "Light don change!", "#fff"); this.haggle = null; }
-    this.target = null;
-    if (this.inRoad()) {
-      // you freeze for a moment before you run. That is what makes standing at the front car risky.
-      this.pstate = "pause"; this.pauseT = Math.max(this.pauseT, 0.55);
-      this.pops.push({ x: this.px, y: this.py - 70, t: 0, text: "Run!", color: "#7dffa8" });
-    } else if (this.pstate !== "pause") this.pstate = "idle";
-    // the front car goes first, the rest follow one by one
-    for (let lane = 0; lane < LANE_Y.length; lane++) {
-      const cars = this.vehs.filter((v) => v.lane === lane && v.st === "stopped").sort((a, b) => b.slotX - a.slotX);
-      cars.forEach((v, i) => { v.launchIn = 0.35 + i * 0.45 + Math.random() * 0.3; });
-    }
-    this.notify();
-  }
-
-  private updateGreen() {
-    if (this.vehs.length === 0 && this.pstate !== "fleeing") this.finishRound();
-  }
-
-  private finishRound() {
-    const j = JUNCTIONS[this.jid];
-    this.summary = {
-      junction: j.name, event: this.ev!, sales: this.stats.sales, rejects: this.stats.rejects, hits: this.stats.hits,
-      earned: this.money - this.moneyAtStart, bestStreak: this.stats.bestStreak, itemsLeft: countStock(this.stock),
-    };
-    this.phase = "summary"; this.botT = 2.6; this.ambT = [0.2, 0.9, 1.5];
-    this.notify();
-  }
-
   private updateTraffic(dt: number) {
-    const leaving = (v: Veh) => v.st === "leaving";
     for (const v of this.vehs) {
       if (v.st === "arriving") {
         const sp = Math.min(330, (v.slotX - v.x) * 2.4 + 30);
@@ -330,7 +377,7 @@ export class JunctionScene {
       } else if (this.phase === "green" && v.st === "stopped") {
         v.launchIn -= dt;
         if (v.launchIn <= 0) { v.st = "leaving"; v.vx = 30; }
-      } else if (leaving(v)) {
+      } else if (v.st === "leaving") {
         v.vx = Math.min(430, v.vx + 360 * dt);
         v.x += v.vx * dt;
       }
@@ -342,9 +389,11 @@ export class JunctionScene {
     if (this.pstate === "pause") {
       this.pauseT -= dt;
       // if the light changed while you were being turned down, get off the road
-      if (this.pauseT <= 0) this.pstate = this.phase === "green" && this.inRoad() ? "fleeing" : "idle";
-    }
-    else if (this.pstate === "running" && this.target) {
+      if (this.pauseT <= 0) {
+        if (this.phase === "green" && this.inRoad()) { this.dest = { x: this.px, y: HOME_Y }; this.pstate = "walk"; }
+        else this.pstate = "idle";
+      }
+    } else if (this.pstate === "running" && this.target) {
       const v = this.target;
       if (v.st !== "stopped" || v.done) { this.target = null; this.pstate = "idle"; }
       else {
@@ -356,9 +405,10 @@ export class JunctionScene {
     } else if (this.pstate === "haggle" && this.haggle) {
       this.haggle.t += dt;
       if (this.haggle.t >= this.haggle.dur && !this.demo) this.settle(false); // be nice: no answer means you take the offer
-    } else if (this.pstate === "fleeing") {
-      this.py += PLAYER_SPEED * 1.15 * dt;
-      if (this.py >= HOME_Y) { this.py = HOME_Y; this.pstate = "idle"; }
+    } else if (this.pstate === "walk") {
+      const d = Math.hypot(this.dest.x - this.px, this.dest.y - this.py);
+      if (d < 5) this.pstate = "idle";
+      else { const s = Math.min(d, PLAYER_SPEED * 1.15 * dt); this.px += ((this.dest.x - this.px) / d) * s; this.py += ((this.dest.y - this.py) / d) * s; }
     }
     // green light danger: a moving car hits you
     if (this.inv <= 0 && this.inRoad()) {
@@ -372,23 +422,15 @@ export class JunctionScene {
   private hit() {
     const loss = Math.min(this.money, 50); this.money -= loss;
     const lost = this.loseRandomItem();
-    this.stats.hits++; this.streak = 0;
+    this.cur.hits++; this.cur.earned -= loss; this.streak = 0;
     this.pops.push({ x: this.px, y: this.py - 80, t: 0, text: `Ouch! -${naira(loss)}${lost ? ` and ${ITEMS[lost].name.toLowerCase()}` : ""}`, color: "#ff8a80" });
-    this.pstate = "pause"; this.pauseT = 1; this.inv = 1.6; this.haggle = null; this.target = null; this.py = HOME_Y;
+    this.pstate = "pause"; this.pauseT = 1; this.lockT = 1; this.inv = 1.6; this.haggle = null; this.target = null; this.py = HOME_Y;
+    this.notify();
   }
 
   // ---------- homepage demo bot ----------
-  private startDemoRound() {
-    this.stock = { water: 6, drink: 3, snack: 3, gadget: 2 }; this.money = 0;
-    this.botDemoJ = (this.botDemoJ + 1) % JUNCTION_LIST.length;
-    this.jid = JUNCTION_LIST[this.botDemoJ].id;
-    this.phase = "prep"; this.startRound();
-  }
   private botUpdate(dt: number) {
-    if (this.phase === "prep" || this.phase === "summary") {
-      this.botT -= dt; if (this.botT <= 0) this.startDemoRound();
-      return;
-    }
+    if (countStock(this.stock) === 0) this.stock = { water: 6, drink: 3, snack: 3, gadget: 2 };
     if (this.phase === "green") return;
     if (this.pstate === "haggle" && this.haggle) {
       this.botHT -= dt;
@@ -408,6 +450,7 @@ export class JunctionScene {
       if (s > bs) { best = v; bs = s; }
     }
     if (best) { this.go(best); this.botHT = 0.5 + Math.random() * 0.5; }
+    else if (this.phase === "yellow" && this.inRoad()) this.retreat(this.px, HOME_Y); // nobody worth it: back to the pavement
   }
 
   // ---------- drawing ----------
@@ -428,13 +471,13 @@ export class JunctionScene {
   private draw() {
     const c = this.ctx;
     c.drawImage(this.bg(), 0, 0, W, H);
-    drawLight(c, this.light(), this.t);
+    drawLight(c, this.phase, this.t);
 
     type D = { key: number; paint: () => void };
     const items: D[] = [];
     for (const a of this.ambient) items.push({ key: groundOf(a), paint: () => drawVehicle(c, a) });
     for (const v of this.vehs) items.push({ key: groundOf(v), paint: () => drawVehicle(c, v) });
-    items.push({ key: this.py + 14, paint: () => this.drawPlayer() });
+    if (this.playing) items.push({ key: this.py + 14, paint: () => this.drawPlayer() });
     items.sort((a, b) => a.key - b.key);
     for (const d of items) d.paint();
 
@@ -447,7 +490,7 @@ export class JunctionScene {
   private drawPlayer() {
     const c = this.ctx;
     if (this.inv > 0 && Math.floor(this.t * 12) % 2) c.globalAlpha = 0.45;
-    drawAvatar(c, this.px, this.py, this.avatar, this.t, 1.05, this.pstate === "running" || this.pstate === "fleeing");
+    drawAvatar(c, this.px, this.py, this.avatar, this.t, 1.05, this.pstate === "running" || this.pstate === "walk");
     c.globalAlpha = 1;
   }
 
@@ -504,36 +547,54 @@ export class JunctionScene {
     const tx = W / 2 - 160;
     this.panel(tx, 12, 320, 44);
     if (this.phase === "red" || this.phase === "yellow") {
-      const frac = Math.max(0, Math.min(1, this.redLeft / this.redNominal));
+      const frac = Math.max(0, Math.min(1, this.redLeft / JUNCTIONS[this.jid].red));
       c.fillStyle = "rgba(255,255,255,.14)"; c.beginPath(); c.roundRect(tx + 14, 38, 292, 10, 5); c.fill();
       c.fillStyle = this.phase === "yellow" ? "#ffc400" : "#ff453a"; c.beginPath(); c.roundRect(tx + 14, 38, 292 * frac, 10, 5); c.fill();
       this.text(this.phase === "yellow" ? "GET READY TO RUN!" : "RED LIGHT: SELL!", W / 2, 32, 20, this.phase === "yellow" ? "#ffd84a" : "#ffffff", "center");
-    } else if (this.phase === "green") {
-      this.text("GREEN! GET OFF THE ROAD", W / 2, 42, 22, "#5cff9a", "center");
+    } else if (this.vehs.length > 0) {
+      this.text(this.playing || this.demo ? "GREEN! GET OFF THE ROAD" : "GREEN LIGHT", W / 2, 42, 22, "#5cff9a", "center");
     } else {
-      this.text(this.demo ? "WAITING FOR RED" : "NEXT LIGHT: GET READY", W / 2, 42, 20, "#ffffff", "center");
+      this.text(`NEXT RED IN ${Math.max(1, Math.ceil(this.toRed))}`, W / 2, 42, 22, "#ffffff", "center");
     }
-    // event banner
+    // event banner at the start of a red, or how the last red went. Sits under the billboards.
     if (this.ev && this.bannerT > 0 && (this.phase === "red" || this.phase === "yellow")) {
-      const e = this.ev, w = 420;
-      this.ctx.globalAlpha = Math.min(1, this.bannerT);
-      this.panel(W / 2 - w / 2, 62, w, 30, e.good ? "rgba(14,143,78,.95)" : e.kind === "normal" ? "rgba(27,27,34,.9)" : "rgba(200,40,30,.95)");
+      const e = this.ev, w = 440;
+      c.globalAlpha = Math.min(1, this.bannerT);
+      this.panel(W / 2 - w / 2, 146, w, 28, e.good ? "rgba(14,143,78,.95)" : e.kind === "normal" ? "rgba(27,27,34,.9)" : "rgba(200,40,30,.95)");
       c.font = "bold 14px sans-serif"; c.textAlign = "center"; c.fillStyle = "#fff";
-      c.fillText(`🎲 ${e.die}  ${e.title}: ${e.text}`, W / 2, 82);
-      this.ctx.globalAlpha = 1;
+      c.fillText(`🎲 ${e.die}  ${e.title}: ${e.text}`, W / 2, 165);
+      c.globalAlpha = 1;
+    } else if (this.last && this.lastT > 0 && this.phase === "green") {
+      const l = this.last, w = 440;
+      c.globalAlpha = Math.min(1, this.lastT);
+      this.panel(W / 2 - w / 2, 146, w, 28, "rgba(27,27,34,.92)");
+      c.font = "bold 14px sans-serif"; c.textAlign = "center"; c.fillStyle = "#fff";
+      c.fillText(`LAST RED: ${l.sales} sold, ${naira(l.earned)}${l.hits ? `, knocked down ${l.hits}` : ""}`, W / 2, 165);
+      c.globalAlpha = 1;
     }
-    // stock tray
-    const x0 = 250, y0 = H - 54;
-    this.panel(x0 - 12, y0 - 4, 4 * 74 + 20, 46);
+    if (!this.playing) return;
+
+    // tray: the total first, then what is left of each item
+    const total = countStock(this.stock), x0 = 300, y0 = H - 56, pulse = this.stockPulse > 0 && Math.floor(this.t * 14) % 2 === 0;
+    this.panel(x0 - 92, y0 - 4, 4 * 74 + 112, 50, total === 0 ? "rgba(160,30,24,.92)" : "rgba(27,27,34,.88)");
+    c.font = "bold 10px sans-serif"; c.textAlign = "left"; c.fillStyle = "rgba(255,255,255,.7)"; c.fillText("ON TRAY", x0 - 80, y0 + 12);
+    this.text(total === 0 ? "EMPTY" : `${total}`, x0 - 80, y0 + 38, total === 0 ? 20 : 28, pulse ? "#ff9f43" : "#ffd84a");
     ITEM_IDS.forEach((id, i) => {
       const x = x0 + i * 74;
-      c.font = "20px sans-serif"; c.textAlign = "left"; c.fillStyle = "#fff"; c.fillText(ITEMS[id].icon, x, y0 + 26);
-      this.text(`x${this.stock[id]}`, x + 28, y0 + 28, 20, this.stock[id] > 0 ? "#ffffff" : "#8c8c96");
+      c.font = "20px sans-serif"; c.textAlign = "left"; c.fillStyle = "#fff"; c.fillText(ITEMS[id].icon, x, y0 + 28);
+      this.text(`x${this.stock[id]}`, x + 28, y0 + 30, 20, this.stock[id] > 0 ? "#ffffff" : "#8c8c96");
     });
+    if (total === 0) { this.text("TRAY EMPTY. LEAVE TO RESTOCK", W / 2, 206, 24, "#ffd84a", "center"); }
     // streak
     if (this.streak >= 2 && (this.phase === "red" || this.phase === "yellow")) {
       this.panel(W - 196, H - 58, 180, 44, "rgba(232,89,12,.95)");
       this.text(`${this.streak} IN A ROW  +${Math.round(this.bonus() * 100)}%`, W - 106, H - 28, 20, "#fff", "center");
     }
+    // the way out, shown while you are in the road
+    if (this.inRoad() && (this.phase === "yellow" || (this.phase === "red" && this.redLeft < 6)) && Math.floor(this.t * 3) % 2 === 0) {
+      this.text("TAP THE PAVEMENT TO RUN BACK", W / 2, BOTTOM + 34, 22, "#ffd84a", "center");
+    }
   }
 }
+
+export { WARN };
