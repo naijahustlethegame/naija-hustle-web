@@ -2,7 +2,7 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { bankPlayer, loadAvatar, loadSave } from "@/lib/storage";
-import { CAPACITY, ITEMS, ITEM_IDS, naira } from "@/game/engine/items";
+import { CAPACITY, ITEMS, ITEM_IDS, countStock, naira } from "@/game/engine/items";
 import { JUNCTION_LIST } from "@/game/engine/junctions";
 import type { JunctionScene, Snapshot } from "@/game/scenes/JunctionScene";
 
@@ -25,7 +25,7 @@ export default function GameView({ demo = false }: { demo?: boolean }) {
       if (dead) return;
       const save = demo ? null : loadSave();
       const s = new JunctionScene(canvas, {
-        demo, avatar: loadAvatar(), money: save?.money, stock: save?.stock,
+        demo, avatar: loadAvatar(), money: save?.money, stock: save?.stock, storage: save?.storage,
         onBank: demo ? undefined : bankPlayer,
       });
       s.start();
@@ -65,7 +65,7 @@ function Controls({ scene, snap }: { scene: JunctionScene; snap: Snapshot }) {
             </span>
           ))}
         </p>
-        {snap.outOfStock && <p className="why" role="status">Your tray is empty. Leave the road to restock.</p>}
+        {snap.outOfStock && <p className="why" role="status">Your tray is empty. Leave the road and load more from home.</p>}
         <p className="hint">
           The light never stops, so sell while it is red. Tap a stopped car to run to it. A hand out, or a bubble
           above the car, means a chance. Tap the pavement to run back before the light goes green.
@@ -77,6 +77,7 @@ function Controls({ scene, snap }: { scene: JunctionScene; snap: Snapshot }) {
     );
   }
 
+  const athome = countStock(snap.storage);
   return (
     <section className="panel" aria-label="Get ready">
       <div className="panel-head">
@@ -95,25 +96,29 @@ function Controls({ scene, snap }: { scene: JunctionScene; snap: Snapshot }) {
       </div>
 
       <div className="panel-head">
-        <h2>Restock</h2>
-        <p className="money">Carrying <strong>{snap.carrying}</strong> of {CAPACITY}</p>
+        <h2>Load your tray</h2>
+        <p className="money">On your tray <strong>{snap.carrying}</strong> of {CAPACITY}</p>
       </div>
+      <p className="note">
+        Stock comes from the market, so choose what to carry from what you have at home.
+        {athome === 0 && snap.carrying === 0 ? " You have nothing left. Run to the market to fill up." : ""}
+      </p>
       <ul className="shop">
         {ITEM_IDS.map((id) => (
           <li key={id}>
             <span className="icon" aria-hidden>{ITEMS[id].icon}</span>
-            <span className="what"><strong>{ITEMS[id].name}</strong><small>Costs {naira(ITEMS[id].cost)}, sells for about {naira(ITEMS[id].price)}</small></span>
+            <span className="what"><strong>{ITEMS[id].name}</strong><small>At home: {snap.storage[id]}. Sells for about {naira(ITEMS[id].price)}</small></span>
             <span className="qty">
-              <button className="opt" onClick={() => scene.refund(id)} disabled={snap.stock[id] === 0} aria-label={`Put back ${ITEMS[id].name}`}>-</button>
+              <button className="opt" onClick={() => scene.unload(id)} disabled={snap.stock[id] === 0} aria-label={`Take ${ITEMS[id].name} off the tray`}>-</button>
               <output aria-label={`${ITEMS[id].name} on tray`}>{snap.stock[id]}</output>
-              <button className="opt" onClick={() => scene.buy(id)} disabled={snap.money < ITEMS[id].cost || snap.carrying >= CAPACITY} aria-label={`Buy ${ITEMS[id].name}`}>+</button>
+              <button className="opt" onClick={() => scene.load(id)} disabled={snap.storage[id] === 0 || snap.carrying >= CAPACITY} aria-label={`Put ${ITEMS[id].name} on the tray`}>+</button>
             </span>
           </li>
         ))}
       </ul>
       <div className="btns">
         <button className="btn" onClick={() => scene.play()} disabled={snap.carrying === 0}>
-          {snap.carrying === 0 ? "Buy something to sell first" : "Play"}
+          {snap.carrying === 0 ? "Put something on your tray first" : "Play"}
         </button>
         <Link className="btn alt" href="/restock">Run to the market for stock</Link>
       </div>

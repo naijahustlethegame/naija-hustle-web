@@ -152,3 +152,4 @@ h3 { font-size: 1.5rem; }
 .tray { display: flex; flex-wrap: wrap; gap: 6px 18px; align-items: baseline; font-size: 1.1rem; }
 .tray .gone { opacity: 0.4; }
 .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.note { margin-top: 0; max-width: 60ch; }

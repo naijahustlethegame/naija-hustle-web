@@ -1,5 +1,6 @@
 import { drawAvatar, type AvatarConfig } from "../avatar/avatar";
 import { NO_LINES, PUSH_FAIL_LINES, SPEC, YES_LINES, makeBuyer, pickColor, pickKind } from "../engine/buyers";
+import { OFFICER_SPOTS, drawOfficer, drawWeatherFront, drawWeatherTint } from "../engine/weather";
 import { WARN, lightAt, type LightPhase } from "../engine/clock";
 import { drawLight, drawVehicle, renderBackdrop, type VehView } from "../engine/draw";
 import { rollRoundEvent, type RoundEvent } from "../engine/events";
@@ -23,12 +24,12 @@ type Haggle = { v: Veh; t: number; dur: number };
 type Stats = { sales: number; rejects: number; hits: number; earned: number; bestStreak: number };
 
 export type Snapshot = {
-  playing: boolean; phase: Phase; money: number; stock: Stock; carrying: number;
+  playing: boolean; phase: Phase; money: number; stock: Stock; storage: Stock; carrying: number;
   junction: JunctionId; outOfStock: boolean;
 };
 type Opts = {
-  demo: boolean; avatar: AvatarConfig; money?: number; stock?: Stock;
-  onBank?: (money: number, stock: Stock) => void;
+  demo: boolean; avatar: AvatarConfig; money?: number; stock?: Stock; storage?: Stock;
+  onBank?: (money: number, stock: Stock, storage: Stock) => void;
   /** Wall clock in ms. Only tests pass this. */
   clock?: () => number;
 };
@@ -56,7 +57,7 @@ export class JunctionScene {
   private phase: Phase = "green";
   private cycle = -1; private needSync = true;
   private jid: JunctionId = "ojuelegba";
-  private money: number; private stock: Stock;
+  private money: number; private stock: Stock; private storage: Stock;
   private vehs: Veh[] = []; private ambient: (VehView & { vx: number })[] = [];
   private pops: Pop[] = [];
   private nextId = 1; private t = 0; private ambT = [0.2, 0.9, 1.5];
@@ -64,7 +65,7 @@ export class JunctionScene {
   private ev: RoundEvent | null = null; private bannerT = 0;
   private streak = 0; private jumped = false;
   private cur: Stats = zero(); private last: Stats | null = null; private lastT = 0;
-  private stockPulse = 0;
+  private stockPulse = 0; private evT = 0; private honkT = 1;
 
   // player
   private px = 300; private py = HOME_Y; private pstate: PState = "idle";
@@ -83,6 +84,7 @@ export class JunctionScene {
     this.demo = opts.demo; this.avatar = opts.avatar; this.playing = opts.demo;
     this.clockFn = opts.clock ?? (() => Date.now());
     this.money = opts.money ?? 0; this.stock = { ...emptyStock(), ...(opts.stock ?? {}) };
+    this.storage = { ...emptyStock(), ...(opts.storage ?? {}) };
     if (this.demo) this.stock = { water: 6, drink: 3, snack: 3, gadget: 2 };
     this.ctx = canvas.getContext("2d")!;
     const dpr = Math.min(window.devicePixelRatio || 1, 2); // cap DPR to protect low-end phones
@@ -104,24 +106,26 @@ export class JunctionScene {
   private makeSnap(): Snapshot {
     const n = countStock(this.stock);
     return {
-      playing: this.playing, phase: this.phase, money: this.money, stock: { ...this.stock }, carrying: n,
+      playing: this.playing, phase: this.phase, money: this.money, stock: { ...this.stock }, storage: { ...this.storage }, carrying: n,
       junction: this.jid, outOfStock: this.playing && n === 0,
     };
   }
   private notify() {
     this.snap = this.makeSnap();
-    if (!this.demo) this.opts.onBank?.(this.money, { ...this.stock });
+    if (!this.demo) this.opts.onBank?.(this.money, { ...this.stock }, { ...this.storage });
     this.listeners.forEach((f) => f());
   }
 
   // ---------- shop and entering (only while you are not on the road) ----------
-  buy(id: ItemId) {
-    if (this.playing || this.money < ITEMS[id].cost || countStock(this.stock) >= CAPACITY) return;
-    this.money -= ITEMS[id].cost; this.stock[id]++; this.notify();
+  /** Move one item from your stock at home onto your tray. */
+  load(id: ItemId) {
+    if (this.playing || this.storage[id] <= 0 || countStock(this.stock) >= CAPACITY) return;
+    this.storage[id]--; this.stock[id]++; this.notify();
   }
-  refund(id: ItemId) {
+  /** Put one item from your tray back at home. */
+  unload(id: ItemId) {
     if (this.playing || this.stock[id] <= 0) return;
-    this.money += ITEMS[id].cost; this.stock[id]--; this.notify();
+    this.stock[id]--; this.storage[id]++; this.notify();
   }
   selectJunction(id: JunctionId) { if (!this.playing && id !== this.jid) { this.jid = id; this.needSync = true; this.notify(); } }
 
@@ -181,7 +185,7 @@ export class JunctionScene {
     if (this.demo && rolled && ++this.demoCycles % 3 === 0) { // the homepage shows a different junction every few lights
       this.demoJ = (this.demoJ + 1) % JUNCTION_LIST.length; this.jid = JUNCTION_LIST[this.demoJ].id; this.needSync = true;
     }
-    this.cycle = cycle; this.phase = phase;
+    this.cycle = cycle; this.phase = phase; this.evT = 0;
     const rng = mulberry32(hashString(`${this.jid}:${cycle}`)); // everybody at this junction gets the same cars
     this.ev = rollRoundEvent(rng);
     this.cur = zero(); this.jumped = false; this.vehs = []; this.pops = [];
@@ -339,6 +343,12 @@ export class JunctionScene {
     if (this.bannerT > 0) this.bannerT -= dt;
     if (this.lastT > 0) this.lastT -= dt;
     if (this.stockPulse > 0) this.stockPulse -= dt;
+    this.evT += dt;
+    if (this.ev?.kind === "goslow" && this.phase !== "green" && (this.honkT -= dt) <= 0) {
+      this.honkT = 0.7 + Math.random() * 1.1; // a go-slow means horns
+      const stopped = this.vehs.filter((v) => v.st === "stopped");
+      if (stopped.length) { const v = pickOne(stopped); this.pops.push({ x: v.x, y: v.y - v.h / 2 - 12, t: 0, text: pickOne(["Pam pam!", "Peeen!", "Oya move!"]), color: "#ffd84a" }); }
+    }
     for (const p of this.pops) p.t += dt;
     this.pops = this.pops.filter((p) => p.t < 1.1);
     this.inv -= dt; this.lockT -= dt;
@@ -471,6 +481,8 @@ export class JunctionScene {
   private draw() {
     const c = this.ctx;
     c.drawImage(this.bg(), 0, 0, W, H);
+    const wk = this.ev ? Math.min(1, this.evT / 1.2) : 0, wkind = this.ev?.kind ?? "normal";
+    drawWeatherTint(c, wkind, wk);
     drawLight(c, this.phase, this.t);
 
     type D = { key: number; paint: () => void };
@@ -478,9 +490,11 @@ export class JunctionScene {
     for (const a of this.ambient) items.push({ key: groundOf(a), paint: () => drawVehicle(c, a) });
     for (const v of this.vehs) items.push({ key: groundOf(v), paint: () => drawVehicle(c, v) });
     if (this.playing) items.push({ key: this.py + 14, paint: () => this.drawPlayer() });
+    if (wkind === "lastma") for (const o of OFFICER_SPOTS) items.push({ key: o.y, paint: () => drawOfficer(c, o.x, o.y, this.t, o.id, wk) });
     items.sort((a, b) => a.key - b.key);
     for (const d of items) d.paint();
 
+    drawWeatherFront(c, wkind, this.t, wk);
     this.drawTells();
     this.drawPops();
     if (this.haggle) this.drawHaggle(this.haggle);

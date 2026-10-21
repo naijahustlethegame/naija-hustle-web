@@ -2,7 +2,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { loadAvatar, loadSave, writeSave } from "@/lib/storage";
-import { CAPACITY, ITEMS, ITEM_IDS, countStock, emptyStock, naira } from "@/game/engine/items";
+import { ITEMS, ITEM_IDS, STORAGE_CAP, countStock, emptyStock, naira } from "@/game/engine/items";
 import type { Stock } from "@/game/engine/types";
 import type { RunResult, RunnerScene } from "@/game/scenes/RunnerScene";
 
@@ -15,7 +15,7 @@ type Summary = {
 };
 type Ui = "ready" | "running" | "result";
 
-/** Pay to run, dodge LASTMA, and carry stock back to your tray. */
+/** Pay to run, dodge LASTMA, and carry stock back home. You pick what goes on your tray on the junction page. */
 export default function RunnerView() {
   const ref = useRef<HTMLCanvasElement>(null);
   const sceneRef = useRef<RunnerScene | null>(null);
@@ -27,27 +27,27 @@ export default function RunnerView() {
   const [sum, setSum] = useState<Summary | null>(null);
 
   const refresh = useCallback(() => {
-    const s = loadSave(); setMoney(s.money); setCarrying(countStock(s.stock));
+    const s = loadSave(); setMoney(s.money); setCarrying(countStock(s.storage));
   }, []);
 
   // Apply the result of a run to the save. Done once per run.
   const finish = useCallback((r: RunResult) => {
     if (applied.current) return; applied.current = true;
-    const s = loadSave(), stock = { ...s.stock }; let m = s.money;
+    const s = loadSave(), storage = { ...s.storage }; let m = s.money;
     const gained = emptyStock(); let dropped = r.dropped, fine = 0, cash = 0, lostItems = 0, lostCash = 0;
     const got = ITEM_IDS.reduce((a, id) => a + r.items[id], 0);
     if (r.outcome === "finished") {
       for (const id of ITEM_IDS) {
-        const n = Math.min(r.items[id], Math.max(0, CAPACITY - countStock(stock)));
-        stock[id] += n; gained[id] = n; dropped += r.items[id] - n;
+        const n = Math.min(r.items[id], Math.max(0, STORAGE_CAP - countStock(storage)));
+        storage[id] += n; gained[id] = n; dropped += r.items[id] - n;
       }
       cash = r.cash; m += cash;
     } else {
       fine = Math.min(m, FINE); m -= fine; lostItems = got; lostCash = r.cash;
     }
-    writeSave({ ...s, money: m, stock });
-    setMoney(m); setCarrying(countStock(stock));
-    setSum({ outcome: r.outcome, gained, dropped, cash, fine, lostItems, lostCash, stumbles: r.stumbles, money: m, carrying: countStock(stock) });
+    writeSave({ ...s, money: m, storage });
+    setMoney(m); setCarrying(countStock(storage));
+    setSum({ outcome: r.outcome, gained, dropped, cash, fine, lostItems, lostCash, stumbles: r.stumbles, money: m, carrying: countStock(storage) });
     setUi("result");
   }, []);
   const finishRef = useRef(finish);
@@ -69,18 +69,18 @@ export default function RunnerView() {
     return () => { dead = true; stop(); };
   }, [refresh]);
 
-  const space = CAPACITY - carrying;
+  const space = STORAGE_CAP - carrying;
   const canRun = ready && money >= FEE && space > 0;
 
   const run = () => {
     const s = loadSave(), sc = sceneRef.current;
-    if (!sc || s.money < FEE || countStock(s.stock) >= CAPACITY) return;
+    if (!sc || s.money < FEE || countStock(s.storage) >= STORAGE_CAP) return;
     writeSave({ ...s, money: s.money - FEE }); // the fee is paid up front, win or lose
     applied.current = false; setMoney(s.money - FEE); setSum(null); setUi("running");
-    sc.begin(CAPACITY - countStock(s.stock));
+    sc.begin(STORAGE_CAP - countStock(s.storage));
   };
 
-  const why = !ready ? "Loading the street..." : space <= 0 ? "Your tray is full. Sell something first." : money < FEE ? `You need ${naira(FEE)} to run.` : "";
+  const why = !ready ? "Loading the street..." : space <= 0 ? "Your stock at home is full. Go and sell some first." : money < FEE ? `You need ${naira(FEE)} to run.` : "";
 
   return (
     <>
@@ -110,7 +110,7 @@ export default function RunnerView() {
             <li><strong>Entry:</strong> {naira(FEE)}, paid up front</li>
             <li><strong>Caught:</strong> fine of up to {naira(FINE)}, and you lose this run&apos;s stock and cash</li>
             <li><strong>Made it:</strong> keep the items and cash bundles</li>
-            <li><strong>Tray:</strong> carrying {carrying} of {CAPACITY}</li>
+            <li><strong>At home:</strong> {carrying} of {STORAGE_CAP} in stock</li>
           </ul>
           <div className="btns">
             <button className="btn" onClick={run} disabled={!canRun}>Pay {naira(FEE)} and run</button>
@@ -130,7 +130,7 @@ export default function RunnerView() {
                 {sum.cash > 0 && <li>Cash {naira(sum.cash)}</li>}
                 {ITEM_IDS.every((id) => sum.gained[id] === 0) && sum.cash === 0 && <li>Nothing this time</li>}
               </ul>
-              {sum.dropped > 0 && <p>No space on your tray, so {sum.dropped} {sum.dropped === 1 ? "item was" : "items were"} dropped.</p>}
+              {sum.dropped > 0 && <p>No space at home, so {sum.dropped} {sum.dropped === 1 ? "item was" : "items were"} dropped.</p>}
             </>
           ) : (
             <p>
@@ -139,7 +139,7 @@ export default function RunnerView() {
               Next time, dodge the officers and jump the low stuff.
             </p>
           )}
-          <p className="totals">You have <strong>{naira(sum.money)}</strong>. Tray: <strong>{sum.carrying}</strong> of {CAPACITY}.</p>
+          <p className="totals">You have <strong>{naira(sum.money)}</strong>. Stock at home: <strong>{sum.carrying}</strong> of {STORAGE_CAP}.</p>
           <div className="btns">
             <button className="btn" onClick={run} disabled={!canRun}>Run again for {naira(FEE)}</button>
             <Link className="btn alt" href="/play">Back to the junction</Link>
