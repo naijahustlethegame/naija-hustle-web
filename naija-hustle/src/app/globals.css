@@ -114,6 +114,7 @@ h3 { font-size: 1.5rem; }
 .pick { text-align: left; font: inherit; display: flex; flex-direction: column; gap: 4px; padding: 14px; border: 3px solid var(--tar); border-radius: 14px; background: var(--paper); cursor: pointer; }
 .pick strong { font-family: var(--display); font-size: 1.3rem; font-weight: 400; }
 .pick .meta { font-size: 0.9rem; font-weight: 700; }
+.pick .mk { font-weight: 400; opacity: 0.8; }
 .pick[aria-checked="true"] { background: var(--danfo); box-shadow: 4px 4px 0 var(--tar); }
 
 .shop { list-style: none; padding: 0; }

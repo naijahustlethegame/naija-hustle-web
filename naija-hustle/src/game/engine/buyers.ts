@@ -34,12 +34,15 @@ const BUY_ODDS: Record<Kind, Dist<Tell>> = {
   jeep: { ignore: 0.03, maybe: 0.35, keen: 0.8 },
 };
 
+const none = () => Object.fromEntries(ITEM_IDS.map((k) => [k, 0])) as Dist<ItemId>;
+const want = (o: Partial<Dist<ItemId>>): Dist<ItemId> => ({ ...none(), ...o });
+/** What each kind of vehicle asks for. Market-only goods (fruit, bread, chargers, shades, perfume) are a smaller share. */
 const WANT_ODDS: Record<Kind, Dist<ItemId>> = {
-  okada: { water: 0.5, drink: 0.2, snack: 0.3, gadget: 0 },
-  keke: { water: 0.4, drink: 0.3, snack: 0.3, gadget: 0 },
-  danfo: { water: 0.3, drink: 0.2, snack: 0.5, gadget: 0 },
-  car: { water: 0.1, drink: 0.4, snack: 0.3, gadget: 0.2 },
-  jeep: { water: 0, drink: 0.3, snack: 0.1, gadget: 0.6 },
+  okada: want({ water: 0.45, drink: 0.15, snack: 0.25, fruit: 0.1, bread: 0.05 }),
+  keke: want({ water: 0.35, drink: 0.25, snack: 0.2, fruit: 0.08, bread: 0.1, charger: 0.02 }),
+  danfo: want({ water: 0.25, drink: 0.15, snack: 0.33, bread: 0.15, fruit: 0.1, charger: 0.02 }),
+  car: want({ water: 0.08, drink: 0.3, snack: 0.18, gadget: 0.12, charger: 0.1, shades: 0.1, perfume: 0.05, fruit: 0.04, bread: 0.03 }),
+  jeep: want({ drink: 0.2, snack: 0.05, gadget: 0.3, charger: 0.05, shades: 0.2, perfume: 0.2 }),
 };
 
 function weighted<T extends string>(dist: Dist<T>, rng: Rng = Math.random): T {

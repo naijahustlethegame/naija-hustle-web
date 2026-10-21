@@ -1,9 +1,10 @@
 "use client";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
-import { bankPlayer, loadAvatar, loadSave } from "@/lib/storage";
-import { CAPACITY, ITEMS, ITEM_IDS, countStock, naira } from "@/game/engine/items";
+import { bankJunction, bankPlayer, loadAvatar, loadSave } from "@/lib/storage";
+import { CAPACITY, CORE_ITEMS, ITEMS, ITEM_IDS, countStock, naira } from "@/game/engine/items";
 import { JUNCTION_LIST } from "@/game/engine/junctions";
+import { feeRange, marketsFor } from "@/game/engine/markets";
 import type { JunctionScene, Snapshot } from "@/game/scenes/JunctionScene";
 
 /**
@@ -25,8 +26,8 @@ export default function GameView({ demo = false }: { demo?: boolean }) {
       if (dead) return;
       const save = demo ? null : loadSave();
       const s = new JunctionScene(canvas, {
-        demo, avatar: loadAvatar(), money: save?.money, stock: save?.stock, storage: save?.storage,
-        onBank: demo ? undefined : bankPlayer,
+        demo, avatar: loadAvatar(), money: save?.money, stock: save?.stock, storage: save?.storage, junction: save?.junction,
+        onBank: demo ? undefined : bankPlayer, onJunction: demo ? undefined : bankJunction,
       });
       s.start();
       setScene(s); setSnap(s.getSnapshot());
@@ -91,6 +92,8 @@ function Controls({ scene, snap }: { scene: JunctionScene; snap: Snapshot }) {
             <strong>{j.name}</strong>
             <span>{j.blurb}</span>
             <span className="meta">Red light about {j.red} seconds</span>
+            <span className="meta">Market runs: {naira(feeRange(j.id)[0])} to {naira(feeRange(j.id)[1])} to enter</span>
+            <span className="meta mk">{marketsFor(j.id).map((m) => m.name).join(", ")}</span>
           </button>
         ))}
       </div>
@@ -104,7 +107,7 @@ function Controls({ scene, snap }: { scene: JunctionScene; snap: Snapshot }) {
         {athome === 0 && snap.carrying === 0 ? " You have nothing left. Run to the market to fill up." : ""}
       </p>
       <ul className="shop">
-        {ITEM_IDS.map((id) => (
+        {ITEM_IDS.filter((id) => CORE_ITEMS.includes(id) || snap.storage[id] + snap.stock[id] > 0).map((id) => (
           <li key={id}>
             <span className="icon" aria-hidden>{ITEMS[id].icon}</span>
             <span className="what"><strong>{ITEMS[id].name}</strong><small>At home: {snap.storage[id]}. Sells for about {naira(ITEMS[id].price)}</small></span>

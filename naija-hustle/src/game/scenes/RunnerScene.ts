@@ -1,11 +1,12 @@
 import { drawAvatar, type AvatarConfig } from "../avatar/avatar";
-import { CAPACITY, ITEMS, ITEM_IDS, countStock, emptyStock } from "../engine/items";
+import { CAPACITY, ITEMS, countStock, emptyStock } from "../engine/items";
+import type { Market } from "../engine/markets";
 import { DISPLAY_FONT } from "../engine/layout";
 import { Loop } from "../engine/loop";
 import { H, W, type ItemId, type Stock } from "../engine/types";
 
 /**
- * The Balogun Market run: a temple-run style dash through a Lagos back street.
+ * The market run: a temple-run style dash through a Lagos back street.
  * Pseudo-3D: everything is a sprite scaled by distance. Lanes are -1, 0, 1.
  * The scene is pure game logic and drawing; paying the fee and saving the result is the React side's job.
  */
@@ -21,9 +22,7 @@ const CHASE_SECS = 7;             // how long the officer stays on your heels af
 const LANE_SPEED = 9;             // lane lerp, lanes per second
 const COUNTDOWN = 0.8;            // seconds per count
 const PRE_SPEED = 12;             // scroll speed during the countdown
-const CASH = [50, 100, 250];
 const CASH_ODDS = [0.6, 0.3, 0.1];
-const ITEM_ODDS: Record<ItemId, number> = { water: 0.5, drink: 0.25, snack: 0.2, gadget: 0.05 };
 
 // ---- projection ----
 const HZ = 150, GY = 470, VX = 480, K = 10, FAR = 75, LANE_W = 150, ROAD_HALF = 240;
@@ -42,7 +41,10 @@ function mulberry(seed: number) {
   return () => { a = (a + 0x6d2b79f5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
 }
 
-const BADGE: Record<ItemId, string> = { water: "#4cc3ff", drink: "#ff7a59", snack: "#ffc23d", gadget: "#9b6bff" };
+const BADGE: Record<ItemId, string> = {
+  water: "#4cc3ff", drink: "#ff7a59", snack: "#ffc23d", gadget: "#9b6bff",
+  fruit: "#ff9f2e", bread: "#d9a066", charger: "#8bc34a", shades: "#34495e", perfume: "#ff6fae",
+};
 
 type OKind = "lastma" | "danfo" | "okada" | "pothole" | "crate" | "item" | "cash";
 type Obj = { kind: OKind; lane: number; z: number; used: boolean; item?: ItemId; cash?: number; seed: number };
@@ -55,7 +57,7 @@ export type RunResult = {
   cash: number;     // cash bundles collected
   stumbles: number;
 };
-type Opts = { avatar: AvatarConfig; reducedMotion?: boolean; onEnd: (r: RunResult) => void };
+type Opts = { avatar: AvatarConfig; market: Market; reducedMotion?: boolean; onEnd: (r: RunResult) => void };
 
 function rr(c: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number, fill: string) {
   c.fillStyle = fill; c.beginPath(); c.roundRect(x, y, w, h, Math.max(0, r)); c.fill();
@@ -68,6 +70,8 @@ export class RunnerScene {
   private ctx: CanvasRenderingContext2D;
   private loop: Loop;
   private bg: HTMLCanvasElement;
+  private bgs: Record<string, HTMLCanvasElement> = {};
+  private market: Market;
   private reduced: boolean;
 
   private phase: RunPhase = "idle";
@@ -92,7 +96,8 @@ export class RunnerScene {
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
     canvas.width = W * dpr; canvas.height = H * dpr;
     this.ctx.scale(dpr, dpr);
-    this.bg = this.renderBg();
+    this.market = opts.market;
+    this.bg = this.bgFor(this.market);
     this.loop = new Loop((dt) => this.update(dt), () => this.draw());
     window.addEventListener("keydown", this.onKey);
     canvas.addEventListener("pointerdown", this.onDown);
@@ -108,6 +113,13 @@ export class RunnerScene {
     this.canvas.removeEventListener("pointerdown", this.onDown);
     this.canvas.removeEventListener("pointerup", this.onUp);
   }
+
+  /** Change where the run goes. Ignored while a run is in progress. */
+  setMarket(m: Market) {
+    if (this.active) return;
+    this.market = m; this.bg = this.bgFor(m);
+  }
+  private bgFor(m: Market) { return (this.bgs[m.id] ??= this.renderBg(m)); }
 
   /** Start a run. `space` is how many more things your tray can hold. */
   begin(space: number) {
@@ -179,10 +191,10 @@ export class RunnerScene {
       const n = 2 + Math.floor(this.rng() * 2);
       for (let i = 0; i < n; i++) {
         const zz = z + 6 + i * 4.5;
-        if (this.rng() < 0.22) {
-          const c = this.weighted(Object.fromEntries(CASH.map((v, i2) => [String(v), CASH_ODDS[i2]])) as Record<string, number>);
+        if (this.rng() < this.market.cashChance) {
+          const c = this.weighted(Object.fromEntries(this.market.cash.map((v, i2) => [String(v), CASH_ODDS[i2]])) as Record<string, number>);
           this.push("cash", lane, zz, { cash: Number(c) });
-        } else this.push("item", lane, zz, { item: this.weighted(ITEM_ODDS) });
+        } else this.push("item", lane, zz, { item: this.weighted(this.market.items as Record<ItemId, number>) });
       }
     }
     this.nextZ += lerp(ROW_GAP[0], ROW_GAP[1], p) + this.rng() * 4;
@@ -244,7 +256,7 @@ export class RunnerScene {
     this.objs = this.objs.filter((o) => o.z - this.dist > -4);
     if (this.dist >= RUN_DIST) {
       this.phase = "finished"; this.endT = 0;
-      this.pops.push({ x: W / 2, y: 190, t: 0, text: "BALOGUN MARKET!", color: "#ffd84a", size: 48 });
+      this.pops.push({ x: W / 2, y: 190, t: 0, text: this.market.name.toUpperCase() + "!", color: "#ffd84a", size: 44 });
     }
   }
 
@@ -272,31 +284,47 @@ export class RunnerScene {
   }
 
   // ---------- drawing ----------
-  private text(s: string, x: number, y: number, size: number, fill: string, align: CanvasTextAlign = "left") {
+  private text(s: string, x: number, y: number, size: number, fill: string, align: CanvasTextAlign = "left", maxW?: number) {
     const c = this.ctx;
     c.font = `${size}px ${DISPLAY_FONT}`; c.textAlign = align;
     c.lineWidth = Math.max(3, size / 6); c.strokeStyle = "rgba(20,12,4,.85)"; c.lineJoin = "round";
-    c.strokeText(s, x, y); c.fillStyle = fill; c.fillText(s, x, y);
+    c.strokeText(s, x, y, maxW); c.fillStyle = fill; c.fillText(s, x, y, maxW);
   }
   private panel(x: number, y: number, w: number, h: number, fill = "rgba(27,27,34,.88)") { rr(this.ctx, x, y, w, h, 12, fill); }
 
-  /** Sky, sun, far skyline and the sandy ground, drawn once. */
-  private renderBg(): HTMLCanvasElement {
+  /** Sky, sun, far skyline and the ground, drawn once per market. */
+  private renderBg(m: Market): HTMLCanvasElement {
     const o = document.createElement("canvas"); o.width = W; o.height = H;
-    const c = o.getContext("2d")!;
-    const g = c.createLinearGradient(0, 0, 0, HZ); g.addColorStop(0, "#ffcf5c"); g.addColorStop(1, "#ff9a5a");
+    const c = o.getContext("2d")!, L = m.look;
+    const g = c.createLinearGradient(0, 0, 0, HZ); g.addColorStop(0, L.skyTop); g.addColorStop(1, L.skyBottom);
     c.fillStyle = g; c.fillRect(0, 0, W, HZ + 2);
-    c.fillStyle = "rgba(255,255,255,.4)"; c.beginPath(); c.arc(700, 96, 40, 0, Math.PI * 2); c.fill();
+    c.fillStyle = L.sun; c.beginPath(); c.arc(L.sunX, 96, 40, 0, Math.PI * 2); c.fill();
+    const cols = L.skylineColors;
     for (let i = 0, x = -10; x < W; i++) {
-      const bw = 34 + hash(i * 3 + 1) * 46, bh = 26 + hash(i * 3 + 2) * 58;
-      c.fillStyle = i % 2 ? "#8a4b4f" : "#a85a55"; c.fillRect(x, HZ - bh, bw, bh + 2);
-      c.fillStyle = "rgba(255,236,170,.65)";
-      for (let wy = HZ - bh + 6; wy < HZ - 6; wy += 11) for (let wx = x + 5; wx < x + bw - 7; wx += 10) if (hash(i * 97 + wx + wy) > 0.5) c.fillRect(wx, wy, 4, 5);
-      x += bw + 2;
+      if (L.skyline === "shacks") {
+        const bw = 44 + hash(i * 3 + 1) * 40, bh = 16 + hash(i * 3 + 2) * 30, top = HZ - bh;
+        c.fillStyle = cols[i % cols.length]; c.fillRect(x, top, bw, bh + 2);
+        c.fillStyle = "#9aa0a6"; c.beginPath(); c.moveTo(x - 3, top + 2); c.lineTo(x + bw + 3, top + 2); c.lineTo(x + bw, top - 6); c.lineTo(x, top - 6); c.fill();
+        c.fillStyle = "rgba(40,24,12,.5)"; for (let wx = x + 7; wx < x + bw - 9; wx += 14) c.fillRect(wx, top + 8, 7, 8);
+        x += bw + 3;
+      } else if (L.skyline === "glass") {
+        const bw = 30 + hash(i * 3 + 1) * 30, bh = 50 + hash(i * 3 + 2) * 80, top = HZ - bh;
+        const gg = c.createLinearGradient(x, top, x + bw, HZ); gg.addColorStop(0, cols[0]); gg.addColorStop(1, cols[1]);
+        c.fillStyle = gg; c.fillRect(x, top, bw, bh + 2);
+        c.strokeStyle = L.lit; c.lineWidth = 1;
+        for (let wx = x + 6; wx < x + bw; wx += 7) { c.beginPath(); c.moveTo(wx, top + 3); c.lineTo(wx, HZ); c.stroke(); }
+        for (let wy = top + 11; wy < HZ; wy += 11) { c.beginPath(); c.moveTo(x, wy); c.lineTo(x + bw, wy); c.stroke(); }
+        x += bw + 6 + hash(i + 11) * 14;
+      } else {
+        const bw = 34 + hash(i * 3 + 1) * 46, bh = 26 + hash(i * 3 + 2) * 58;
+        c.fillStyle = cols[i % cols.length]; c.fillRect(x, HZ - bh, bw, bh + 2);
+        c.fillStyle = L.lit;
+        for (let wy = HZ - bh + 6; wy < HZ - 6; wy += 11) for (let wx = x + 5; wx < x + bw - 7; wx += 10) if (hash(i * 97 + wx + wy) > 0.5) c.fillRect(wx, wy, 4, 5);
+        x += bw + 2;
+      }
     }
-    c.fillStyle = "#cdb98a"; c.fillRect(0, HZ, W, H - HZ);
-    const sand = c.createLinearGradient(0, HZ, 0, H); sand.addColorStop(0, "#bba878"); sand.addColorStop(1, "#d9c493");
-    c.fillStyle = sand; c.fillRect(0, HZ, W, H - HZ);
+    const gr = c.createLinearGradient(0, HZ, 0, H); gr.addColorStop(0, L.ground[0]); gr.addColorStop(1, L.ground[1]);
+    c.fillStyle = gr; c.fillRect(0, HZ, W, H - HZ);
     return o;
   }
 
@@ -308,7 +336,7 @@ export class RunnerScene {
 
   private drawRoad() {
     const c = this.ctx, sb = (H - HZ) / (GY - HZ);
-    c.fillStyle = "#3b3b43"; c.beginPath(); c.moveTo(VX, HZ); c.lineTo(VX + ROAD_HALF * sb, H); c.lineTo(VX - ROAD_HALF * sb, H); c.closePath(); c.fill();
+    c.fillStyle = this.market.look.road; c.beginPath(); c.moveTo(VX, HZ); c.lineTo(VX + ROAD_HALF * sb, H); c.lineTo(VX - ROAD_HALF * sb, H); c.closePath(); c.fill();
     // painted kerbs and lane dashes scroll with distance
     const kp = 8, ko = this.dist % (kp * 2), dp = 8, dof = this.dist % dp;
     for (let k = -1; k * kp - ko < FAR; k++) {
@@ -422,10 +450,10 @@ export class RunnerScene {
   private danfo(x: number, gy: number, s: number) {
     const c = this.ctx, w = 130 * s, top = gy - 92 * s;
     c.fillStyle = "rgba(0,0,0,.25)"; c.beginPath(); c.ellipse(x, gy - 2 * s, w / 2 + 6 * s, 8 * s, 0, 0, Math.PI * 2); c.fill();
-    rr(c, x - w / 2, top, w, 70 * s, 8 * s, "#f7b500");
+    rr(c, x - w / 2, top, w, 70 * s, 8 * s, this.market.look.bus.body);
     rr(c, x - w / 2 + 14 * s, top + 8 * s, w - 28 * s, 22 * s, 4 * s, "#26323b");
     c.fillStyle = INK; c.fillRect(x - w / 2, top + 36 * s, w, 12 * s);
-    c.fillStyle = "#fff"; c.font = `bold ${Math.max(5, 9 * s)}px sans-serif`; c.textAlign = "center"; c.fillText("GOD DEY", x, top + 45 * s);
+    c.fillStyle = "#fff"; c.font = `bold ${Math.max(5, 9 * s)}px sans-serif`; c.textAlign = "center"; c.fillText(this.market.look.bus.label, x, top + 45 * s);
     rr(c, x - w / 2 + 4 * s, top + 52 * s, 14 * s, 9 * s, 2 * s, "#e4382f"); rr(c, x + w / 2 - 18 * s, top + 52 * s, 14 * s, 9 * s, 2 * s, "#e4382f");
     rr(c, x - 15 * s, top + 52 * s, 30 * s, 11 * s, 2 * s, "#fff");
     rr(c, x - w / 2, top + 70 * s, w, 8 * s, 3 * s, "#555");
@@ -444,24 +472,36 @@ export class RunnerScene {
   }
 
   private scenery(rel: number, side: number, h: number, i: number) {
-    const c = this.ctx, s = sOf(rel), gy = yOf(s), kind = Math.floor(h * 6);
+    const c = this.ctx, s = sOf(rel), gy = yOf(s), L = this.market.look;
+    const [mShop, mStall] = L.mix, shop = h < mShop, stall = !shop && h < mShop + mStall, tall = shop && h < mShop / 3;
     const cx = xOf(side * (ROAD_HALF + 28 + 78), s);
     c.save(); c.globalAlpha = this.fade(rel);
-    if (kind <= 1 || kind === 5) {
-      // shop or tall building
-      const bh = (kind === 1 ? 230 : 130 + hash(i + 3) * 40), bw = 150 * s, col = ["#a85a55", "#8a4b4f", "#6f8aa0", "#c4894f", "#7d9a6b"][Math.floor(hash(i * 5 + 2) * 5)];
+    if (shop) {
+      const bh = tall ? 230 : 130 + hash(i + 3) * 40, bw = 150 * s, col = L.shopWalls[Math.floor(hash(i * 5 + 2) * L.shopWalls.length)];
       rr(c, cx - bw / 2, gy - bh * s, bw, bh * s, 4 * s, col);
-      c.fillStyle = "rgba(255,236,170,.75)";
+      c.fillStyle = L.skyline === "glass" ? "rgba(150,210,235,.7)" : "rgba(255,236,170,.75)";
       for (let wy = gy - bh * s + 14 * s; wy < gy - 60 * s; wy += 26 * s) for (let wx = cx - bw / 2 + 12 * s; wx < cx + bw / 2 - 20 * s; wx += 28 * s) c.fillRect(wx, wy, 14 * s, 14 * s);
-      for (let a = 0; a < 6; a++) rr(c, cx - bw / 2 + a * (bw / 6), gy - 58 * s, bw / 6, 22 * s, 0, a % 2 ? "#fff8e1" : "#e4382f"); // awning
-      rr(c, cx - bw / 2 + 10 * s, gy - 36 * s, bw - 20 * s, 36 * s, 2 * s, "#3b2a1a");
-    } else if (kind === 2 || kind === 3) {
-      // market stall with an umbrella
-      const col = ["#e4382f", "#0e8f4e", "#f2c200", "#2b6cb0"][Math.floor(hash(i * 3 + 1) * 4)];
+      for (let a = 0; a < 6; a++) rr(c, cx - bw / 2 + a * (bw / 6), gy - 58 * s, bw / 6, 22 * s, 0, L.awnings[a % 2 ? 1 : 0]); // awning
+      rr(c, cx - bw / 2 + 10 * s, gy - 36 * s, bw - 20 * s, 36 * s, 2 * s, L.door);
+    } else if (stall) {
+      const col = L.umbrellas[Math.floor(hash(i * 3 + 1) * L.umbrellas.length)];
       rr(c, cx - 3 * s, gy - 90 * s, 6 * s, 90 * s, 1, "#6b4a2b");
       c.fillStyle = col; c.beginPath(); c.moveTo(cx - 62 * s, gy - 88 * s); c.quadraticCurveTo(cx, gy - 140 * s, cx + 62 * s, gy - 88 * s); c.closePath(); c.fill();
       rr(c, cx - 48 * s, gy - 40 * s, 96 * s, 12 * s, 2 * s, "#8a5a33"); rr(c, cx - 44 * s, gy - 28 * s, 8 * s, 28 * s, 1, "#6b4a2b"); rr(c, cx + 36 * s, gy - 28 * s, 8 * s, 28 * s, 1, "#6b4a2b");
-      for (let a = 0; a < 5; a++) dot(c, cx - 36 * s + a * 18 * s, gy - 46 * s, 7 * s, ["#e4382f", "#f2c200", "#0e8f4e", "#ff8a3d", "#e4382f"][a]);
+      for (let a = 0; a < 5; a++) dot(c, cx - 36 * s + a * 18 * s, gy - 46 * s, 7 * s, L.goods[a % L.goods.length]);
+    } else if (L.tree === "palm") {
+      const lean = (h * 7 % 1 - 0.5) * 40 * s;
+      c.strokeStyle = "#7a5a38"; c.lineCap = "round"; c.lineWidth = Math.max(2, 12 * s);
+      c.beginPath(); c.moveTo(cx, gy); c.quadraticCurveTo(cx + lean * 0.3, gy - 90 * s, cx + lean, gy - 170 * s); c.stroke();
+      const tx = cx + lean, ty = gy - 170 * s;
+      c.fillStyle = "#2f9a4a";
+      for (let f = 0; f < 7; f++) {
+        const a = -Math.PI * (0.05 + (f / 6) * 0.9);
+        c.beginPath(); c.moveTo(tx, ty);
+        c.quadraticCurveTo(tx + Math.cos(a) * 50 * s, ty + Math.sin(a) * 50 * s - 16 * s, tx + Math.cos(a) * 88 * s, ty + Math.sin(a) * 88 * s + 18 * s);
+        c.quadraticCurveTo(tx + Math.cos(a) * 50 * s, ty + Math.sin(a) * 50 * s + 4 * s, tx, ty + 6 * s); c.fill();
+      }
+      dot(c, tx, ty + 6 * s, 7 * s, "#6b4a2a");
     } else {
       // tree
       rr(c, cx - 5 * s, gy - 70 * s, 10 * s, 70 * s, 2 * s, "#5a3a22");
@@ -479,13 +519,13 @@ export class RunnerScene {
 
   /** The finish: a market arch across the road. */
   private gate(rel: number) {
-    const c = this.ctx, s = sOf(Math.max(rel, -2)), gy = yOf(s), xl = xOf(-ROAD_HALF - 20, s), xr = xOf(ROAD_HALF + 20, s);
+    const c = this.ctx, s = sOf(Math.max(rel, -2)), gy = yOf(s), xl = xOf(-ROAD_HALF - 20, s), xr = xOf(ROAD_HALF + 20, s), G = this.market.look.gate;
     c.save(); c.globalAlpha = this.fade(rel);
-    rr(c, xl - 7 * s, gy - 230 * s, 14 * s, 230 * s, 2 * s, "#0e8f4e"); rr(c, xr - 7 * s, gy - 230 * s, 14 * s, 230 * s, 2 * s, "#0e8f4e");
-    rr(c, xl - 10 * s, gy - 250 * s, xr - xl + 20 * s, 64 * s, 8 * s, "#fff8e1");
+    rr(c, xl - 7 * s, gy - 230 * s, 14 * s, 230 * s, 2 * s, G.post); rr(c, xr - 7 * s, gy - 230 * s, 14 * s, 230 * s, 2 * s, G.post);
+    rr(c, xl - 10 * s, gy - 250 * s, xr - xl + 20 * s, 64 * s, 8 * s, G.board);
     c.strokeStyle = INK; c.lineWidth = Math.max(1, 4 * s); c.beginPath(); c.roundRect(xl - 10 * s, gy - 250 * s, xr - xl + 20 * s, 64 * s, 8 * s); c.stroke();
-    c.fillStyle = "#e4382f"; c.fillRect(xl, gy - 244 * s, xr - xl, 8 * s);
-    c.fillStyle = INK; c.font = `${Math.max(8, 38 * s)}px ${DISPLAY_FONT}`; c.textAlign = "center"; c.fillText("BALOGUN MARKET", (xl + xr) / 2, gy - 200 * s);
+    c.fillStyle = G.trim; c.fillRect(xl, gy - 244 * s, xr - xl, 8 * s);
+    c.fillStyle = INK; c.font = `${Math.max(8, 38 * s)}px ${DISPLAY_FONT}`; c.textAlign = "center"; c.fillText(G.text, (xl + xr) / 2, gy - 200 * s, xr - xl - 20 * s);
     c.restore();
   }
 
@@ -544,28 +584,29 @@ export class RunnerScene {
     c.fillStyle = "#ffd84a"; c.beginPath(); c.roundRect(bx + 16, 32, 296 * frac, 10, 5); c.fill();
     dot(c, bx + 16 + 296 * frac, 37, 8, "#e4382f");
     c.font = "18px sans-serif"; c.textAlign = "center"; c.fillStyle = "#fff"; c.fillText("🏁", bx + 322, 42);
-    this.text("TO BALOGUN MARKET", W / 2, 28, 14, "#ffffff", "center");
+    this.text(`TO ${this.market.name.toUpperCase()}`, W / 2, 28, 14, "#ffffff", "center");
     // stumbles: two and you are caught
     this.panel(W - 190, 12, 176, 44);
     this.text("STUMBLES", W - 176, 42, 16, "#ffffff");
     for (let i = 0; i < 2; i++) dot(c, W - 56 + i * 26, 34, 9, i < this.stumbles ? "#ff453a" : "rgba(255,255,255,.25)");
     // what you are carrying out of the market
     const x0 = 22, y0 = H - 54, left = Math.max(0, this.space - countStock(this.items));
-    this.panel(x0 - 10, y0 - 4, 4 * 66 + 130, 46);
-    ITEM_IDS.forEach((id, i) => {
+    const ids = Object.keys(this.market.items) as ItemId[];
+    this.panel(x0 - 10, y0 - 4, ids.length * 66 + 130, 46);
+    ids.forEach((id, i) => {
       const x = x0 + i * 66;
       c.font = "20px sans-serif"; c.textAlign = "left"; c.fillStyle = "#fff"; c.fillText(ITEMS[id].icon, x, y0 + 26);
       this.text(`x${this.items[id]}`, x + 28, y0 + 28, 20, this.items[id] > 0 ? "#ffffff" : "#8c8c96");
     });
-    this.text(`Room ${left}`, x0 + 4 * 66 + 4, y0 + 28, 18, left > 0 ? "#ffd84a" : "#ff8a80");
+    this.text(`Room ${left}`, x0 + ids.length * 66 + 4, y0 + 28, 18, left > 0 ? "#ffd84a" : "#ff8a80");
   }
 
   private drawOverlay() {
     const c = this.ctx;
     if (this.phase === "idle") {
       c.fillStyle = "rgba(20,12,4,.5)"; c.fillRect(0, 0, W, H);
-      this.text("BALOGUN MARKET RUN", W / 2, 210, 54, "#ffd84a", "center");
-      this.text("Dodge LASTMA. Jump potholes. Grab stock on the way.", W / 2, 262, 24, "#ffffff", "center");
+      this.text(this.market.name.toUpperCase(), W / 2, 210, 54, "#ffd84a", "center", W - 80);
+      this.text("Dodge LASTMA. Jump potholes. Grab stock on the way.", W / 2, 262, 24, "#ffffff", "center", W - 80);
       this.text("Pay the entry fee below to start", W / 2, 306, 22, "#7dffa8", "center");
     } else if (this.phase === "countdown") {
       const n = 3 - Math.floor(this.cd / COUNTDOWN);

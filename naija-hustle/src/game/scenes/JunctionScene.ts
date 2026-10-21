@@ -4,7 +4,7 @@ import { OFFICER_SPOTS, drawOfficer, drawWeatherFront, drawWeatherTint } from ".
 import { WARN, lightAt, type LightPhase } from "../engine/clock";
 import { drawLight, drawVehicle, renderBackdrop, type VehView } from "../engine/draw";
 import { rollRoundEvent, type RoundEvent } from "../engine/events";
-import { CAPACITY, ITEMS, ITEM_IDS, countStock, emptyStock, naira } from "../engine/items";
+import { CAPACITY, CORE_ITEMS, ITEMS, ITEM_IDS, countStock, emptyStock, naira } from "../engine/items";
 import { JUNCTIONS, JUNCTION_LIST, type JunctionId } from "../engine/junctions";
 import { BOTTOM, DISPLAY_FONT, HOME_Y, LANE_Y, PLAYER_SPEED, STOP_X, TOP } from "../engine/layout";
 import { Loop } from "../engine/loop";
@@ -29,7 +29,9 @@ export type Snapshot = {
 };
 type Opts = {
   demo: boolean; avatar: AvatarConfig; money?: number; stock?: Stock; storage?: Stock;
+  junction?: JunctionId;
   onBank?: (money: number, stock: Stock, storage: Stock) => void;
+  onJunction?: (id: JunctionId) => void;
   /** Wall clock in ms. Only tests pass this. */
   clock?: () => number;
 };
@@ -82,10 +84,11 @@ export class JunctionScene {
 
   constructor(private canvas: HTMLCanvasElement, private opts: Opts) {
     this.demo = opts.demo; this.avatar = opts.avatar; this.playing = opts.demo;
+    if (opts.junction && !opts.demo) this.jid = opts.junction;
     this.clockFn = opts.clock ?? (() => Date.now());
     this.money = opts.money ?? 0; this.stock = { ...emptyStock(), ...(opts.stock ?? {}) };
     this.storage = { ...emptyStock(), ...(opts.storage ?? {}) };
-    if (this.demo) this.stock = { water: 6, drink: 3, snack: 3, gadget: 2 };
+    if (this.demo) this.stock = { ...emptyStock(), water: 6, drink: 3, snack: 3, gadget: 2 };
     this.ctx = canvas.getContext("2d")!;
     const dpr = Math.min(window.devicePixelRatio || 1, 2); // cap DPR to protect low-end phones
     canvas.width = W * dpr; canvas.height = H * dpr;
@@ -127,7 +130,7 @@ export class JunctionScene {
     if (this.playing || this.stock[id] <= 0) return;
     this.stock[id]--; this.storage[id]++; this.notify();
   }
-  selectJunction(id: JunctionId) { if (!this.playing && id !== this.jid) { this.jid = id; this.needSync = true; this.notify(); } }
+  selectJunction(id: JunctionId) { if (!this.playing && id !== this.jid) { this.jid = id; this.needSync = true; this.opts.onJunction?.(id); this.notify(); } }
 
   /** Join the junction. You walk on at whatever light is showing. */
   play() {
@@ -440,7 +443,7 @@ export class JunctionScene {
 
   // ---------- homepage demo bot ----------
   private botUpdate(dt: number) {
-    if (countStock(this.stock) === 0) this.stock = { water: 6, drink: 3, snack: 3, gadget: 2 };
+    if (countStock(this.stock) === 0) this.stock = { ...emptyStock(), water: 6, drink: 3, snack: 3, gadget: 2 };
     if (this.phase === "green") return;
     if (this.pstate === "haggle" && this.haggle) {
       this.botHT -= dt;
@@ -574,27 +577,30 @@ export class JunctionScene {
     if (this.ev && this.bannerT > 0 && (this.phase === "red" || this.phase === "yellow")) {
       const e = this.ev, w = 440;
       c.globalAlpha = Math.min(1, this.bannerT);
-      this.panel(W / 2 - w / 2, 146, w, 28, e.good ? "rgba(14,143,78,.95)" : e.kind === "normal" ? "rgba(27,27,34,.9)" : "rgba(200,40,30,.95)");
+      this.panel(W / 2 - w / 2, 156, w, 28, e.good ? "rgba(14,143,78,.95)" : e.kind === "normal" ? "rgba(27,27,34,.9)" : "rgba(200,40,30,.95)");
       c.font = "bold 14px sans-serif"; c.textAlign = "center"; c.fillStyle = "#fff";
-      c.fillText(`🎲 ${e.die}  ${e.title}: ${e.text}`, W / 2, 165);
+      c.fillText(`🎲 ${e.die}  ${e.title}: ${e.text}`, W / 2, 175);
       c.globalAlpha = 1;
     } else if (this.last && this.lastT > 0 && this.phase === "green") {
       const l = this.last, w = 440;
       c.globalAlpha = Math.min(1, this.lastT);
-      this.panel(W / 2 - w / 2, 146, w, 28, "rgba(27,27,34,.92)");
+      this.panel(W / 2 - w / 2, 156, w, 28, "rgba(27,27,34,.92)");
       c.font = "bold 14px sans-serif"; c.textAlign = "center"; c.fillStyle = "#fff";
-      c.fillText(`LAST RED: ${l.sales} sold, ${naira(l.earned)}${l.hits ? `, knocked down ${l.hits}` : ""}`, W / 2, 165);
+      c.fillText(`LAST RED: ${l.sales} sold, ${naira(l.earned)}${l.hits ? `, knocked down ${l.hits}` : ""}`, W / 2, 175);
       c.globalAlpha = 1;
     }
     if (!this.playing) return;
 
     // tray: the total first, then what is left of each item
-    const total = countStock(this.stock), x0 = 300, y0 = H - 56, pulse = this.stockPulse > 0 && Math.floor(this.t * 14) % 2 === 0;
-    this.panel(x0 - 92, y0 - 4, 4 * 74 + 112, 50, total === 0 ? "rgba(160,30,24,.92)" : "rgba(27,27,34,.88)");
+    const total = countStock(this.stock), y0 = H - 56, pulse = this.stockPulse > 0 && Math.floor(this.t * 14) % 2 === 0;
+    // the everyday four always show; market-only goods show while you are carrying them. Slides left to leave room for the streak badge.
+    const shown = ITEM_IDS.filter((id) => CORE_ITEMS.includes(id) || this.stock[id] > 0);
+    const pw = shown.length * 66 + 112, left = Math.max(14, Math.min(208, 750 - pw)), x0 = left + 92;
+    this.panel(left, y0 - 4, pw, 50, total === 0 ? "rgba(160,30,24,.92)" : "rgba(27,27,34,.88)");
     c.font = "bold 10px sans-serif"; c.textAlign = "left"; c.fillStyle = "rgba(255,255,255,.7)"; c.fillText("ON TRAY", x0 - 80, y0 + 12);
     this.text(total === 0 ? "EMPTY" : `${total}`, x0 - 80, y0 + 38, total === 0 ? 20 : 28, pulse ? "#ff9f43" : "#ffd84a");
-    ITEM_IDS.forEach((id, i) => {
-      const x = x0 + i * 74;
+    shown.forEach((id, i) => {
+      const x = x0 + i * 66;
       c.font = "20px sans-serif"; c.textAlign = "left"; c.fillStyle = "#fff"; c.fillText(ITEMS[id].icon, x, y0 + 28);
       this.text(`x${this.stock[id]}`, x + 28, y0 + 30, 20, this.stock[id] > 0 ? "#ffffff" : "#8c8c96");
     });

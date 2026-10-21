@@ -20,9 +20,9 @@ function disc(c: Ctx, x: number, y: number, r: number, fill: string) {
 function drawBillboard(c: Ctx, s: (typeof AD_SLOTS)[number], img?: CanvasImageSource) {
   const { x, y, w, h } = s;
   // legs and cross brace
-  c.fillStyle = "#4a4d55"; c.fillRect(x + 34, y + h, 9, 22); c.fillRect(x + w - 43, y + h, 9, 22);
-  c.fillStyle = "#33353b"; c.fillRect(x + 34, y + h + 4, 9, 3); c.fillRect(x + w - 43, y + h + 4, 9, 3);
-  c.fillStyle = "rgba(0,0,0,.18)"; c.beginPath(); c.ellipse(x + w / 2, y + h + 22, w * 0.42, 4, 0, 0, Math.PI * 2); c.fill();
+  c.fillStyle = "rgba(0,0,0,.18)"; c.beginPath(); c.ellipse(x + w / 2, y + h + 12, w * 0.42, 3.5, 0, 0, Math.PI * 2); c.fill();
+  c.fillStyle = "#4a4d55"; c.fillRect(x + 34, y + h, 9, 12); c.fillRect(x + w - 43, y + h, 9, 12);
+  c.fillStyle = "#33353b"; c.fillRect(x + 31, y + h + 10, 15, 3); c.fillRect(x + w - 46, y + h + 10, 15, 3);
   // frame
   rr(c, x - 6, y - 6, w + 12, h + 12, 4, "#2b2d33");
   rr(c, x - 3, y - 3, w + 6, h + 6, 3, "#6d7079");
@@ -37,7 +37,7 @@ function drawBillboard(c: Ctx, s: (typeof AD_SLOTS)[number], img?: CanvasImageSo
     c.beginPath(); c.moveTo(x + 16, y + h); c.lineTo(x + 70, y); c.lineTo(x + 96, y); c.lineTo(x + 42, y + h); c.fill();
     c.strokeStyle = "rgba(0,0,0,.07)"; c.lineWidth = 1; // seams where the sheets meet
     for (let i = 1; i < 4; i++) { c.beginPath(); c.moveTo(x + (w / 4) * i, y); c.lineTo(x + (w / 4) * i, y + h); c.stroke(); }
-    c.fillStyle = "#bdb8a8"; c.font = `11px ${DISPLAY_FONT}`; c.textAlign = "center";
+    c.fillStyle = "#bdb8a8"; c.font = `13px ${DISPLAY_FONT}`; c.textAlign = "center";
     c.fillText("AD SPACE", x + w / 2, y + h / 2 + 4);
   }
   // catwalk and lamps on top
@@ -181,16 +181,14 @@ export function renderBackdrop(j: Junction, ads: AdImages = {}): HTMLCanvasEleme
   else if (j.id === "obalende") obalendeSky(c, rnd);
   else lekkiSky(c, rnd);
 
-  if (j.id === "lekki") { palm(c, 18, 150, 78, 14); palm(c, 604, 150, 66, -10); palm(c, 902, 150, 84, -16); }
-
-  for (const s of AD_SLOTS) drawBillboard(c, s, ads[s.id]);
+  if (j.id === "lekki") { palm(c, 318, 150, 84, 12); palm(c, 642, 150, 70, -10); palm(c, 948, 150, 84, -14); }
 
   // top pavement and painted kerb
   c.fillStyle = j.pavement; c.fillRect(0, 140, W, TOP - 140);
   c.fillStyle = "rgba(0,0,0,.08)"; c.fillRect(0, 140, W, 3);
   c.fillStyle = "#f2c200"; c.fillRect(0, TOP - 6, W, 6); c.fillStyle = INK; for (let x = 0; x < W; x += 36) c.fillRect(x, TOP - 6, 18, 6);
-  // billboard feet sit on this pavement, so draw their shadows again on top of it
-  c.fillStyle = "rgba(0,0,0,.14)"; for (const s of AD_SLOTS) { c.beginPath(); c.ellipse(s.x + s.w / 2, 154, s.w * 0.4, 3, 0, 0, Math.PI * 2); c.fill(); }
+  // billboards stand on this pavement, so they are drawn after it
+  for (const s of AD_SLOTS) drawBillboard(c, s, ads[s.id]);
 
   // road
   c.fillStyle = j.road; c.fillRect(0, TOP, W, BOTTOM - TOP);

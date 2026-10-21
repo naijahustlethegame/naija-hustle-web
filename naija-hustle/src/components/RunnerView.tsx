@@ -3,19 +3,23 @@ import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { loadAvatar, loadSave, writeSave } from "@/lib/storage";
 import { ITEMS, ITEM_IDS, STORAGE_CAP, countStock, emptyStock, naira } from "@/game/engine/items";
-import type { Stock } from "@/game/engine/types";
+import { JUNCTIONS, type JunctionId } from "@/game/engine/junctions";
+import { fineFor, marketsFor, rollMarket, type Market } from "@/game/engine/markets";
+import type { ItemId, Stock } from "@/game/engine/types";
 import type { RunResult, RunnerScene } from "@/game/scenes/RunnerScene";
 
-const FEE = 150;   // pay to play
-const FINE = 300;  // LASTMA fine when caught (or whatever you have left)
+const stars = (m: Market) => "★".repeat(m.tier) + "☆".repeat(3 - m.tier);
 
 type Summary = {
-  outcome: "finished" | "caught"; gained: Stock; dropped: number; cash: number; fine: number;
+  market: Market; outcome: "finished" | "caught"; gained: Stock; dropped: number; cash: number; fine: number;
   lostItems: number; lostCash: number; stumbles: number; money: number; carrying: number;
 };
 type Ui = "ready" | "running" | "result";
 
-/** Pay to run, dodge LASTMA, and carry stock back home. You pick what goes on your tray on the junction page. */
+/**
+ * Pay to run, dodge LASTMA, and carry stock back home. Where you run to depends on the junction you work:
+ * each has its own markets, and the game picks one at random for every run. You pick what goes on your tray on the junction page.
+ */
 export default function RunnerView() {
   const ref = useRef<HTMLCanvasElement>(null);
   const sceneRef = useRef<RunnerScene | null>(null);
@@ -25,14 +29,21 @@ export default function RunnerView() {
   const [money, setMoney] = useState(0);
   const [carrying, setCarrying] = useState(0);
   const [sum, setSum] = useState<Summary | null>(null);
+  const [junction, setJunction] = useState<JunctionId>("ojuelegba");
+  const [market, setMarket] = useState<Market | null>(null); // rolled after mount so server and browser agree
 
   const refresh = useCallback(() => {
     const s = loadSave(); setMoney(s.money); setCarrying(countStock(s.storage));
+    setJunction(s.junction);
+    setMarket((m) => (m && m.junction === s.junction ? m : rollMarket(s.junction)));
   }, []);
 
   // Apply the result of a run to the save. Done once per run.
+  const marketRef = useRef<Market | null>(null);
+  marketRef.current = market;
   const finish = useCallback((r: RunResult) => {
-    if (applied.current) return; applied.current = true;
+    const mk = marketRef.current;
+    if (applied.current || !mk) return; applied.current = true;
     const s = loadSave(), storage = { ...s.storage }; let m = s.money;
     const gained = emptyStock(); let dropped = r.dropped, fine = 0, cash = 0, lostItems = 0, lostCash = 0;
     const got = ITEM_IDS.reduce((a, id) => a + r.items[id], 0);
@@ -43,11 +54,12 @@ export default function RunnerView() {
       }
       cash = r.cash; m += cash;
     } else {
-      fine = Math.min(m, FINE); m -= fine; lostItems = got; lostCash = r.cash;
+      fine = Math.min(m, fineFor(mk)); m -= fine; lostItems = got; lostCash = r.cash;
     }
     writeSave({ ...s, money: m, storage });
     setMoney(m); setCarrying(countStock(storage));
-    setSum({ outcome: r.outcome, gained, dropped, cash, fine, lostItems, lostCash, stumbles: r.stumbles, money: m, carrying: countStock(storage) });
+    setMarket(rollMarket(s.junction, mk.id)); // the next run goes somewhere new
+    setSum({ market: mk, outcome: r.outcome, gained, dropped, cash, fine, lostItems, lostCash, stumbles: r.stumbles, money: m, carrying: countStock(storage) });
     setUi("result");
   }, []);
   const finishRef = useRef(finish);
@@ -60,7 +72,7 @@ export default function RunnerView() {
     Promise.all([import("@/game/scenes/RunnerScene"), document.fonts.load("24px Anton").catch(() => [])]).then(([{ RunnerScene }]) => {
       if (dead) return;
       const reduced = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
-      const s = new RunnerScene(canvas, { avatar: loadAvatar(), reducedMotion: reduced, onEnd: (r) => finishRef.current(r) });
+      const s = new RunnerScene(canvas, { avatar: loadAvatar(), market: marketRef.current ?? rollMarket(loadSave().junction), reducedMotion: reduced, onEnd: (r) => finishRef.current(r) });
       s.start(); sceneRef.current = s; setReady(true);
       const io = new IntersectionObserver(([e]) => (e.isIntersecting ? s.resume() : s.pause()));
       io.observe(canvas);
@@ -69,23 +81,29 @@ export default function RunnerView() {
     return () => { dead = true; stop(); };
   }, [refresh]);
 
+  // keep the scene pointed at the market that has been rolled
+  useEffect(() => { if (ready && market) sceneRef.current?.setMarket(market); }, [ready, market]);
+
+  const fee = market?.fee ?? 0;
   const space = STORAGE_CAP - carrying;
-  const canRun = ready && money >= FEE && space > 0;
+  const canRun = ready && !!market && money >= fee && space > 0;
 
   const run = () => {
     const s = loadSave(), sc = sceneRef.current;
-    if (!sc || s.money < FEE || countStock(s.storage) >= STORAGE_CAP) return;
-    writeSave({ ...s, money: s.money - FEE }); // the fee is paid up front, win or lose
-    applied.current = false; setMoney(s.money - FEE); setSum(null); setUi("running");
+    if (!sc || !market || s.money < market.fee || countStock(s.storage) >= STORAGE_CAP) return;
+    sc.setMarket(market);
+    writeSave({ ...s, money: s.money - market.fee }); // the fee is paid up front, win or lose
+    applied.current = false; setMoney(s.money - market.fee); setSum(null); setUi("running");
     sc.begin(STORAGE_CAP - countStock(s.storage));
   };
 
-  const why = !ready ? "Loading the street..." : space <= 0 ? "Your stock at home is full. Go and sell some first." : money < FEE ? `You need ${naira(FEE)} to run.` : "";
+  const why = !ready || !market ? "Loading the street..." : space <= 0 ? "Your stock at home is full. Go and sell some first." : money < fee ? `You need ${naira(fee)} to run to ${market.name}.` : "";
+  const goods = (m: Market) => (Object.keys(m.items) as ItemId[]).sort((a, b) => (m.items[b] ?? 0) - (m.items[a] ?? 0));
 
   return (
     <>
       <div className="frame runner">
-        <canvas ref={ref} aria-label="Balogun Market run: dodge LASTMA and grab stock" />
+        <canvas ref={ref} aria-label={`${market?.name ?? "Market"} run: dodge LASTMA and grab stock`} />
       </div>
 
       {ui === "running" && (
@@ -102,18 +120,35 @@ export default function RunnerView() {
       {ui === "ready" && (
         <section className="panel" aria-label="Start a run">
           <div className="panel-head">
-            <h2>Run to Balogun Market</h2>
+            <h2>{market ? `Run to ${market.name}` : "Finding a market..."}</h2>
             <p className="money">You have <strong>{naira(money)}</strong></p>
           </div>
-          <p>Stock is cheaper when you run for it. Pay the entry fee, dodge LASTMA, jump the potholes and grab what you can before the market gate. Get caught and you pay a fine and lose everything you picked up.</p>
-          <ul className="rules">
-            <li><strong>Entry:</strong> {naira(FEE)}, paid up front</li>
-            <li><strong>Caught:</strong> fine of up to {naira(FINE)}, and you lose this run&apos;s stock and cash</li>
-            <li><strong>Made it:</strong> keep the items and cash bundles</li>
-            <li><strong>At home:</strong> {carrying} of {STORAGE_CAP} in stock</li>
-          </ul>
+          {market && (
+            <>
+              <p className="where">
+                <span className="tier" aria-label={`${market.tier} out of 3 stars`}>{stars(market)}</span>
+                Today&apos;s market for <strong>{JUNCTIONS[junction].name}</strong>. {market.blurb}
+              </p>
+              <p className="note">You can pick up:</p>
+              <ul className="chips" aria-label={`Goods at ${market.name}`}>
+                {goods(market).map((id) => <li key={id}><span aria-hidden>{ITEMS[id].icon}</span> {ITEMS[id].name}</li>)}
+                <li>Cash up to {naira(market.cash[2])}</li>
+              </ul>
+              <ul className="rules">
+                <li><strong>Entry:</strong> {naira(market.fee)}, paid up front</li>
+                <li><strong>Caught:</strong> fine of up to {naira(fineFor(market))}, and you lose this run&apos;s stock and cash</li>
+                <li><strong>Made it:</strong> keep the items and cash bundles</li>
+                <li><strong>At home:</strong> {carrying} of {STORAGE_CAP} in stock</li>
+              </ul>
+              <p className="note">
+                The market is picked at random each run from the places near {JUNCTIONS[junction].name}:{" "}
+                {marketsFor(junction).map((m) => `${m.name} (${naira(m.fee)})`).join(", ")}.
+                Dearer markets stock better goods. Work a different junction to see other markets.
+              </p>
+            </>
+          )}
           <div className="btns">
-            <button className="btn" onClick={run} disabled={!canRun}>Pay {naira(FEE)} and run</button>
+            <button className="btn" onClick={run} disabled={!canRun}>{market ? `Pay ${naira(fee)} and run` : "Loading"}</button>
             <Link className="btn alt" href="/play">Back to the junction</Link>
           </div>
           {why && <p className="why" role="status">{why}</p>}
@@ -122,7 +157,7 @@ export default function RunnerView() {
 
       {ui === "result" && sum && (
         <section className={`panel result ${sum.outcome}`} aria-label="Run result" aria-live="polite">
-          <h2>{sum.outcome === "finished" ? "You made it to Balogun Market!" : "LASTMA caught you"}</h2>
+          <h2>{sum.outcome === "finished" ? `You made it to ${sum.market.name}!` : "LASTMA caught you"}</h2>
           {sum.outcome === "finished" ? (
             <>
               <ul className="chips">
@@ -141,7 +176,7 @@ export default function RunnerView() {
           )}
           <p className="totals">You have <strong>{naira(sum.money)}</strong>. Stock at home: <strong>{sum.carrying}</strong> of {STORAGE_CAP}.</p>
           <div className="btns">
-            <button className="btn" onClick={run} disabled={!canRun}>Run again for {naira(FEE)}</button>
+            <button className="btn" onClick={run} disabled={!canRun}>{market ? `Next market: ${market.name}, ${naira(fee)}` : "Loading"}</button>
             <Link className="btn alt" href="/play">Back to the junction</Link>
           </div>
           {why && <p className="why" role="status">{why}</p>}

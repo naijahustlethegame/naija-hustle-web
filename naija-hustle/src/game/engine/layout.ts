@@ -11,11 +11,12 @@ export const DISPLAY_FONT = "Anton, Impact, 'Arial Narrow Bold', 'Arial Black', 
 
 /**
  * The three billboards behind the road. Each face is a sellable ad space (3:1, like a real roadside board).
+ * 264 x 88 each, 10% bigger than before, with 60px of skyline showing between them.
  * Pass an image per id to renderBackdrop to fill one; blank for now.
  */
 export const AD_SLOTS = [
-  { id: "ad1", x: 24, y: 60, w: 240, h: 80 },
-  { id: "ad2", x: 328, y: 60, w: 240, h: 80 },
-  { id: "ad3", x: 632, y: 60, w: 240, h: 80 },
+  { id: "ad1", x: 24, y: 58, w: 264, h: 88 },
+  { id: "ad2", x: 348, y: 58, w: 264, h: 88 },
+  { id: "ad3", x: 672, y: 58, w: 264, h: 88 },
 ] as const;
 export type AdSlotId = (typeof AD_SLOTS)[number]["id"];
