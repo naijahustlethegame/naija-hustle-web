@@ -1,6 +1,7 @@
 import { ITEMS, ITEM_IDS } from "./items";
 import type { Buyer, ItemId, Kind, Tell } from "./types";
 import type { RoundEventKind } from "./events";
+import type { Rng } from "./rng";
 
 /** Vehicle look and pay. mult scales every price the buyer will pay. */
 export const SPEC: Record<Kind, { w: number; h: number; mult: number; color: string; label: string }> = {
@@ -41,27 +42,27 @@ const WANT_ODDS: Record<Kind, Dist<ItemId>> = {
   jeep: { water: 0, drink: 0.3, snack: 0.1, gadget: 0.6 },
 };
 
-function weighted<T extends string>(dist: Dist<T>): T {
+function weighted<T extends string>(dist: Dist<T>, rng: Rng = Math.random): T {
   const keys = Object.keys(dist) as T[];
-  let r = Math.random() * keys.reduce((a, k) => a + dist[k], 0);
+  let r = rng() * keys.reduce((a, k) => a + dist[k], 0);
   for (const k of keys) { r -= dist[k]; if (r <= 0) return k; }
   return keys[keys.length - 1];
 }
 
-export const pickKind = (mix: Dist<Kind>): Kind => weighted(mix);
-export const pickColor = (kind: Kind) => (kind === "car" ? CAR_COLORS[Math.floor(Math.random() * CAR_COLORS.length)] : SPEC[kind].color);
+export const pickKind = (mix: Dist<Kind>, rng: Rng = Math.random): Kind => weighted(mix, rng);
+export const pickColor = (kind: Kind, rng: Rng = Math.random) => (kind === "car" ? CAR_COLORS[Math.floor(rng() * CAR_COLORS.length)] : SPEC[kind].color);
 
-export function makeBuyer(kind: Kind, weather: RoundEventKind): Buyer {
-  const tell = weighted(TELL_ODDS[kind]);
+export function makeBuyer(kind: Kind, weather: RoundEventKind, rng: Rng = Math.random): Buyer {
+  const tell = weighted(TELL_ODDS[kind], rng);
   let buyP = BUY_ODDS[kind][tell];
   const wants = { ...WANT_ODDS[kind] };
   if (weather === "rain") buyP *= 0.75;
   if (weather === "sun") { buyP = Math.min(0.95, buyP * 1.1); wants.water *= 2; wants.drink *= 2; }
-  const want = weighted(wants);
-  const base = ITEMS[want].price * SPEC[kind].mult * (0.85 + Math.random() * 0.3);
+  const want = weighted(wants, rng);
+  const base = ITEMS[want].price * SPEC[kind].mult * (0.85 + rng() * 0.3);
   const offer = Math.max(10, Math.round(base / 10) * 10);
   const pushP = ({ keen: 0.6, maybe: 0.45, ignore: 0.3 } as Dist<Tell>)[tell] + (kind === "jeep" ? 0.1 : 0);
-  return { tell, willBuy: Math.random() < buyP, want, offer, pushP };
+  return { tell, willBuy: rng() < buyP, want, offer, pushP };
 }
 
 export { ITEM_IDS };

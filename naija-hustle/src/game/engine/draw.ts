@@ -1,7 +1,5 @@
-import type { Junction } from "./junctions";
 import type { Kind, Tell } from "./types";
-import { H, W } from "./types";
-import { BOTTOM, DISPLAY_FONT, LIGHT_X, STOP_X, TOP } from "./layout";
+import { LIGHT_X, TOP } from "./layout";
 
 export type LightState = "red" | "yellow" | "green";
 
@@ -114,55 +112,4 @@ export function drawLight(c: CanvasRenderingContext2D, state: LightState, t: num
   }
 }
 
-/** Static scenery, drawn once per junction to an offscreen canvas. */
-export function renderBackdrop(j: Junction): HTMLCanvasElement {
-  const o = document.createElement("canvas"); o.width = W; o.height = H;
-  const c = o.getContext("2d")!;
-  // sky
-  const g = c.createLinearGradient(0, 0, 0, 150); g.addColorStop(0, j.skyTop); g.addColorStop(1, j.skyBottom);
-  c.fillStyle = g; c.fillRect(0, 0, W, 150);
-  c.fillStyle = "rgba(255,255,255,.35)"; c.beginPath(); c.arc(150, 70, 34, 0, Math.PI * 2); c.fill(); // low sun
-  // skyline
-  let seed = j.name.length * 97;
-  const rnd = () => { seed = (seed * 9301 + 49297) % 233280; return seed / 233280; };
-  for (let i = 0, x = -10; x < W; i++) {
-    const bw = 50 + rnd() * 50, bh = 50 + rnd() * 70;
-    c.fillStyle = i % 2 ? "#8a4b4f" : "#a85a55"; c.fillRect(x, 150 - bh, bw, bh);
-    c.fillStyle = "rgba(255,236,170,.7)";
-    for (let wy = 150 - bh + 8; wy < 140; wy += 14) for (let wx = x + 6; wx < x + bw - 8; wx += 12) if (rnd() > 0.45) c.fillRect(wx, wy, 5, 7);
-    x += bw + 2;
-  }
-  // one billboard, placed clear of the HUD panels (money on the left, light timer in the middle)
-  {
-    const bx = 668, text = j.signs[0];
-    c.fillStyle = "#4a3a2e"; c.fillRect(bx + 30, 66, 8, 70); c.fillRect(bx + 142, 66, 8, 70);
-    rr(c, bx, 8, 180, 62, 6, "#fff8e1");
-    c.strokeStyle = INK; c.lineWidth = 4; c.beginPath(); c.roundRect(bx, 8, 180, 62, 6); c.stroke();
-    c.fillStyle = "#e4382f"; c.fillRect(bx + 8, 16, 164, 12);
-    c.fillStyle = INK; c.font = `24px ${DISPLAY_FONT}`; c.textAlign = "center"; c.fillText(text, bx + 90, 57);
-  }
-  // top pavement
-  c.fillStyle = "#cdb98a"; c.fillRect(0, 140, W, TOP - 140);
-  c.fillStyle = "#f2c200"; c.fillRect(0, TOP - 6, W, 6); c.fillStyle = INK; for (let x = 0; x < W; x += 36) c.fillRect(x, TOP - 6, 18, 6); // painted kerb
-  // road
-  c.fillStyle = "#3b3b43"; c.fillRect(0, TOP, W, BOTTOM - TOP);
-  for (let i = 0; i < 700; i++) { c.fillStyle = rnd() > 0.5 ? "rgba(255,255,255,.04)" : "rgba(0,0,0,.08)"; c.fillRect(rnd() * W, TOP + rnd() * (BOTTOM - TOP), 2 + rnd() * 3, 2); }
-  c.strokeStyle = "rgba(245,240,200,.85)"; c.lineWidth = 3; c.setLineDash([28, 22]);
-  for (const y of [TOP + 71, TOP + 141]) { c.beginPath(); c.moveTo(0, y); c.lineTo(STOP_X - 6, y); c.stroke(); }
-  c.setLineDash([]);
-  c.fillStyle = "#f5f0c8"; c.fillRect(STOP_X + 2, TOP, 6, BOTTOM - TOP);        // stop line
-  for (let y = TOP + 8; y < BOTTOM - 10; y += 22) c.fillRect(STOP_X + 18, y, 46, 11); // zebra
-  // bottom pavement
-  c.fillStyle = "#f2c200"; c.fillRect(0, BOTTOM, W, 6); c.fillStyle = INK; for (let x = 18; x < W; x += 36) c.fillRect(x, BOTTOM, 18, 6);
-  c.fillStyle = "#d9c493"; c.fillRect(0, BOTTOM + 6, W, H - BOTTOM - 6);
-  c.strokeStyle = "rgba(0,0,0,.08)"; c.lineWidth = 2;
-  for (let x = 0; x < W; x += 60) { c.beginPath(); c.moveTo(x, BOTTOM + 6); c.lineTo(x, H); c.stroke(); }
-  for (let y = BOTTOM + 46; y < H; y += 46) { c.beginPath(); c.moveTo(0, y); c.lineTo(W, y); c.stroke(); }
-  // Mama Put stall, where you restock
-  c.fillStyle = "#6b4a2b"; c.fillRect(34, BOTTOM + 36, 6, 70); c.fillRect(200, BOTTOM + 36, 6, 70);
-  for (let i = 0; i < 8; i++) { c.fillStyle = i % 2 ? "#fff8e1" : "#e4382f"; c.fillRect(24 + i * 23, BOTTOM + 24, 23, 24); }
-  rr(c, 40, BOTTOM + 70, 160, 34, 4, "#8a5a33");
-  c.fillStyle = "#fff"; c.font = `17px ${DISPLAY_FONT}`; c.textAlign = "center"; c.fillText("MAMA PUT", 120, BOTTOM + 94);
-  circle(c, 70, BOTTOM + 62, 8, "#e4382f"); circle(c, 100, BOTTOM + 62, 8, "#0e8f4e"); circle(c, 170, BOTTOM + 62, 8, "#f2c200");
-  return o;
-}
+export { renderBackdrop } from "./scenery";
