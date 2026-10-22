@@ -26,7 +26,8 @@
         "./src/*"
       ]
     },
-    "allowJs": true
+    "allowJs": true,
+    "noUncheckedSideEffectImports": false
   },
   "include": [
     "next-env.d.ts",
