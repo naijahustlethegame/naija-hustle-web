@@ -6,9 +6,9 @@ import SellersCanvas from "@/components/SellersCanvas";
 const BUYERS = [
   ["Okada riders", "Water and snacks. Small money, but they are everywhere."],
   ["Keke drivers", "Water, drinks and snacks. A friendly crowd."],
-  ["Danfo conductors", "Snacks first. Big vehicle, middling pay."],
+  ["Danfo conductors", "Snacks first. Medium pay."],
   ["Office cars", "Cold drinks, and sometimes a gadget."],
-  ["Jeeps", "Gadgets. They pay nearly double, and the glass is almost always up."],
+  ["Jeeps", "Gadgets. They pay almost double, but rarely buy."],
 ];
 
 export default function Home() {
@@ -20,8 +20,8 @@ export default function Home() {
           <div className="hero-copy">
             <h1>Beat the green light.</h1>
             <p>
-              Sell water, snacks and gadgets to cars stopped at a Lagos junction. Read who
-              will buy, close the sale, and get off the road before the light changes.
+              Sell water, snacks and gadgets to cars at a Lagos junction. Pick who will
+              buy, make the sale, and get off the road before the light turns green.
             </p>
             <div className="btns">
               <Link className="btn" href="/play">Play now</Link>
@@ -30,7 +30,7 @@ export default function Home() {
           </div>
           <figure className="hero-demo">
             <GameView demo />
-            <figcaption>Live from the junction. Real hustlers, same buyers, only so many seats. Your turn next.</figcaption>
+            <figcaption>Live from the junction. Your turn next!</figcaption>
           </figure>
         </section>
 
@@ -46,17 +46,17 @@ export default function Home() {
             <li className="red">
               <span className="n">1</span>
               <h3>The light turns red</h3>
-              <p>Cars roll up and stop. The road is safe to cross, but the clock is running. Tap a car and run to it.</p>
+              <p>Cars stop and wait. Tap a car and run to it. Be quick!</p>
             </li>
             <li className="amber">
               <span className="n">2</span>
               <h3>Read the window</h3>
-              <p>A hand out or a bubble above the car means a chance. Glass up usually means no. Then take the offer, or push the price and risk it.</p>
+              <p>A hand out means they may buy. A closed window usually means no. Take their price, or ask for more and risk it.</p>
             </li>
             <li className="green">
               <span className="n">3</span>
               <h3>Clear out before green</h3>
-              <p>When the light flashes yellow, run for the pavement. Cars that start moving will knock you down, and you drop cash and stock.</p>
+              <p>When the light flashes yellow, run to the pavement. Moving cars knock you down and you lose money and stock.</p>
             </li>
           </ol>
         </section>
@@ -65,8 +65,8 @@ export default function Home() {
           <div>
             <h2>Not everybody buys</h2>
             <p>
-              Body language helps, but it is never a promise. A hand out can still say no, and a
-              closed window sometimes opens. Rain makes it worse. Hot sun makes cold water fly.
+              A hand out helps, but nobody is sure to buy. Rain means fewer buyers.
+              Hot sun makes everyone want cold water.
             </p>
           </div>
           <dl className="buyers">
@@ -81,8 +81,8 @@ export default function Home() {
             <div>
               <h2>Hire sellers, then go play</h2>
               <p>
-                Pay a seller once and they work their own corner on auto. They do not follow you to
-                the junction. Visit their corner to watch them hustle and collect what they earned.
+                Pay a seller once and they sell for you, even when you are away.
+                Come back to collect the money.
               </p>
               <Link className="btn" href="/sellers">Meet the sellers</Link>
             </div>

@@ -151,9 +151,9 @@ export default function RunnerView() {
       const kept = countStock(b.storage) - countStock(s.storage), dropped = Math.max(0, countStock(p.items) - kept);
       saveRef.current = { ...s, money: b.money, storage: b.storage, pot: null };
       setMoney(b.money); setCarrying(countStock(b.storage)); setPot(null); setSum(null);
-      setNotice(`Banked! ${naira(p.cash)} cash and ${kept} items are safe at home${dropped ? ` (${dropped} dropped, no space)` : ""}.`);
+      setNotice(`Saved! ${naira(p.cash)} cash and ${kept} items are safe at home${dropped ? ` (${dropped} dropped, no space)` : ""}.`);
       setMarket(rollMarket(s.junction, p.market)); setUi("ready");
-    } catch { setNotice("Could not bank that. Reloading your game."); void refresh(); }
+    } catch { setNotice("Could not save that. Reloading your game."); void refresh(); }
     finally { setBusy(false); }
   };
 
@@ -168,7 +168,7 @@ export default function RunnerView() {
 
       {ui === "running" && (
         <>
-          <p className="hint">Left and right arrows (or swipe, or tap the sides) change lane. Up arrow, space, swipe up or tap the middle to jump.</p>
+          <p className="hint">Swipe or tap left and right to change lane. Tap the middle to jump.</p>
           <div className="pad" aria-label="Touch controls">
             <button className="opt" onClick={() => sceneRef.current?.moveLane(-1)} aria-label="Move left">◀</button>
             <button className="opt" onClick={() => sceneRef.current?.jump()}>Jump</button>
@@ -188,15 +188,15 @@ export default function RunnerView() {
             The game picks a market at random for <strong>{JUNCTIONS[junction].name}</strong> when you pay.
           </p>
           <ul className="rules">
-            <li><strong>Entry:</strong> {naira(minFee)} to {naira(maxFee)} depending on the market, paid up front</li>
-            <li><strong>Caught:</strong> fine of up to {naira(maxFee * 2)}, and you lose everything you have not banked</li>
-            <li><strong>Made it:</strong> bank your winnings, or risk them to run again for x2, x3 and x4 rewards on a faster, tougher road</li>
+            <li><strong>Entry:</strong> {naira(minFee)} to {naira(maxFee)} depending on the market. You pay first.</li>
+            <li><strong>Caught:</strong> you pay a fine of up to {naira(maxFee)} and lose what you picked up</li>
+            <li><strong>Made it:</strong> keep your prizes, or run again for x2, x3 or x4 prizes</li>
             <li><strong>At home:</strong> {carrying} of {STORAGE_CAP} in stock</li>
           </ul>
           <p className="note">
             Markets near {JUNCTIONS[junction].name}:{" "}
             {marketsFor(junction).map((m) => `${m.name} (${naira(m.fee)})`).join(", ")}.
-            Dearer markets stock better goods. Work a different junction to see other markets.
+            Dearer markets have better things.
           </p>
           <div className="btns">
             <button className="btn" onClick={run} disabled={!canRun}>{ready ? "Pay entry and run" : "Loading"}</button>
@@ -208,13 +208,13 @@ export default function RunnerView() {
 
       {ui === "pot" && pot && market && (
         <section className="panel result finished" aria-label="Run result" aria-live="polite">
-          <h2>{sum ? `You made it to ${market.name}!` : `Unbanked winnings from ${market.name}`}</h2>
+          <h2>{sum ? `You made it to ${market.name}!` : `Prizes not saved yet from ${market.name}`}</h2>
           {notice && <p className="why" role="status">{notice}</p>}
           <p className="note">
             {pot.level > 1 ? <strong className="mult">x{pot.level} </strong> : null}
-            At stake{pot.level > 1 ? ` after ${pot.level} runs in a row` : ""}:
+            You could lose{pot.level > 1 ? ` after ${pot.level} runs in a row` : ""}:
           </p>
-          <ul className="chips" aria-label="Unbanked winnings">
+          <ul className="chips" aria-label="Prizes not saved yet">
             {potChips(pot)}
             {pot.cash > 0 && <li>Cash {naira(pot.cash)}</li>}
             {countStock(pot.items) === 0 && pot.cash === 0 && <li>Nothing yet</li>}
@@ -222,15 +222,15 @@ export default function RunnerView() {
           {sum && sum.dropped > 0 && <p>No space at home, so {sum.dropped} {sum.dropped === 1 ? "item was" : "items were"} dropped.</p>}
           {pot.level < MAX_LEVEL ? (
             <p className="risk">
-              Run again for <strong>x{pot.level + 1} rewards</strong>: {LEVEL_NAME[pot.level + 1].toLowerCase()}. The road is faster, with more officers and tighter gaps.
-              Get caught and you lose <strong>all of the above</strong> plus a {naira(fineFor(market))} fine.
+              Run again for <strong>x{pot.level + 1} prizes</strong>. The road is faster and harder.
+              If you get caught, you lose <strong>all of this</strong> and pay a fine of {naira(fineFor(market))}.
             </p>
           ) : (
-            <p className="risk">You cleared the top level. Time to bank it.</p>
+            <p className="risk">You beat the hardest road! Save your prizes.</p>
           )}
           <div className="btns">
-            <button className="btn" onClick={bank} disabled={busy}>Bank it</button>
-            {pot.level < MAX_LEVEL && <button className="btn risky" onClick={pushOn} disabled={busy}>Risk it: x{pot.level + 1} run</button>}
+            <button className="btn" onClick={bank} disabled={busy}>Save it</button>
+            {pot.level < MAX_LEVEL && <button className="btn risky" onClick={pushOn} disabled={busy}>Run again: x{pot.level + 1}</button>}
           </div>
         </section>
       )}
@@ -241,7 +241,7 @@ export default function RunnerView() {
           <p>
             You paid a fine of <strong>{naira(sum.fine)}</strong>
             {sum.lostItems + sum.lostCash > 0 ? ` and lost ${sum.lostItems} ${sum.lostItems === 1 ? "item" : "items"}${sum.lostCash > 0 ? ` and ${naira(sum.lostCash)}` : ""}` : ""}.
-            {sum.level > 1 ? ` That was a x${sum.level} run, so everything you had stacked up is gone.` : ""} Next time, dodge the officers and jump the low stuff.
+            {sum.level > 1 ? ` Your earlier prizes are gone too.` : ""} Next time, dodge the officers and jump the low stuff.
           </p>
           <p className="totals">You have <strong>{naira(money)}</strong>. Stock at home: <strong>{carrying}</strong> of {STORAGE_CAP}.</p>
           <div className="btns">

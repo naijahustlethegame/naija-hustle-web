@@ -7,16 +7,18 @@ import type { Rng } from "./rng";
 const pick = <T,>(a: T[], rng: Rng) => a[Math.floor(rng() * a.length)];
 
 const BAD: Omit<RoundEvent, "die">[] = [
-  { kind: "lastma", title: "LASTMA!", text: "Task force grabs 2 items from your tray.", good: false },
-  { kind: "rain", title: "Rain dey fall", text: "Windows go up. Fewer people will buy.", good: false },
+  { kind: "lastma", title: "LASTMA!", text: "LASTMA takes 2 items from your tray.", good: false },
+  { kind: "rain", title: "Rain dey fall", text: "Windows go up. Fewer buyers.", good: false },
 ];
 const NORMAL: Omit<RoundEvent, "die">[] = [
-  { kind: "normal", title: "Normal hustle", text: "Nothing special. Work the light.", good: false },
+  { kind: "normal", title: "Normal hustle", text: "A normal day. Start selling.", good: false },
 ];
 const GOOD: Omit<RoundEvent, "die">[] = [
   { kind: "sun", title: "Hot sun", text: "Everybody wants water and cold drinks.", good: true },
-  { kind: "goslow", title: "Go-slow", text: "Traffic is stuck. Longer queues, more cars to sell to.", good: true },
+  { kind: "goslow", title: "Go-slow", text: "Cars stuck even on green. Risk it!", good: true },
 ];
+/** A hold-up: the light goes green but the cars stay put for a while. */
+export const GOSLOW = GOOD[1]!;
 
 export function rollRoundEvent(rng: Rng = Math.random): RoundEvent {
   const die = 1 + Math.floor(rng() * 6);
