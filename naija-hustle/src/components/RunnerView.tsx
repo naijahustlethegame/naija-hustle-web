@@ -1,14 +1,13 @@
 "use client";
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { loadAvatar, loadSave, writeSave, type Pot } from "@/lib/storage";
+import { loadAvatar, type Pot, type SaveData } from "@/lib/storage";
+import { ApiError, api, loadPlayer, toPot } from "@/lib/api";
 import { ITEMS, ITEM_IDS, STORAGE_CAP, countStock, emptyStock, naira } from "@/game/engine/items";
 import { JUNCTIONS, type JunctionId } from "@/game/engine/junctions";
-import { fineFor, marketById, marketsFor, rollMarket, type Market } from "@/game/engine/markets";
+import { feeRange, fineFor, marketById, marketsFor, rollMarket, type Market } from "@/game/engine/markets";
 import type { ItemId, Stock } from "@/game/engine/types";
 import { LEVEL_NAME, MAX_LEVEL, type RunResult, type RunnerScene } from "@/game/scenes/RunnerScene";
-
-const stars = (m: Market) => "★".repeat(m.tier) + "☆".repeat(3 - m.tier);
 
 type Summary = {
   market: Market; outcome: "finished" | "caught"; level: number; gained: Stock; cash: number; dropped: number;
@@ -42,63 +41,61 @@ export default function RunnerView() {
   const marketRef = useRef<Market | null>(null);
   marketRef.current = market;
 
-  // Load the save. A pot that was mid-run when the page closed counts as a catch.
-  const refresh = useCallback(() => {
-    let s = loadSave();
-    let pm = s.pot ? marketById(s.pot.market) : undefined;
-    if (s.pot && (s.pot.running || !pm)) {
-      const fine = pm ? Math.min(s.money, fineFor(pm)) : 0, lost = countStock(s.pot.items), lostCash = s.pot.cash;
-      s = { ...s, money: s.money - fine, pot: null }; writeSave(s); pm = undefined;
-      setNotice(`You left mid-run, so LASTMA caught you. You lost ${lost} ${lost === 1 ? "item" : "items"} and ${naira(lostCash)}${fine ? `, and paid a fine of ${naira(fine)}` : ""}.`);
-    }
-    setMoney(s.money); setCarrying(countStock(s.storage)); setJunction(s.junction); setPot(s.pot);
-    if (s.pot && pm) { setMarket(pm); setUi("pot"); }
-    else setMarket((m) => (m && m.junction === s.junction ? m : rollMarket(s.junction)));
+  const [busy, setBusy] = useState(false);
+  const saveRef = useRef<SaveData | null>(null);
+
+  // Load the player from the server. A pot that was mid-run when the page closed counts as a catch.
+  const refresh = useCallback(async () => {
+    try {
+      let s = await loadPlayer();
+      let pm = s.pot ? marketById(s.pot.market) : undefined;
+      if (s.pot && (s.pot.running || !pm)) {
+        const lost = countStock(s.pot.items), lostCash = s.pot.cash;
+        const f = await api.fail(), fine = Math.max(0, s.money - f.money);
+        s = { ...s, money: f.money, pot: null }; pm = undefined;
+        setNotice(`You left mid-run, so LASTMA caught you. You lost ${lost} ${lost === 1 ? "item" : "items"} and ${naira(lostCash)}${fine ? `, and paid a fine of ${naira(fine)}` : ""}.`);
+      }
+      saveRef.current = s;
+      setMoney(s.money); setCarrying(countStock(s.storage)); setJunction(s.junction); setPot(s.pot);
+      if (s.pot && pm) { setMarket(pm); setUi("pot"); }
+      else setMarket((m) => (m && m.junction === s.junction ? m : rollMarket(s.junction)));
+    } catch { setNotice("Could not reach the server. Refresh to try again."); }
   }, []);
 
-  const bankAll = (s: ReturnType<typeof loadSave>, p: Pot) => {
-    const storage = { ...s.storage }; let dropped = 0;
-    for (const id of ITEM_IDS) {
-      const n = Math.min(p.items[id], Math.max(0, STORAGE_CAP - countStock(storage)));
-      storage[id] += n; dropped += p.items[id] - n;
-    }
-    return { storage, dropped, money: s.money + p.cash };
-  };
-
-  // Apply the result of a run. Done once per run.
-  const finish = useCallback((r: RunResult) => {
-    const mk = marketRef.current;
-    if (applied.current || !mk) return; applied.current = true;
-    const s = loadSave(), level = runLevel.current, prev = s.pot;
-    if (r.outcome === "finished") {
-      const items = { ...(prev?.items ?? emptyStock()) };
-      for (const id of ITEM_IDS) items[id] += r.items[id];
-      const next: Pot = { items, cash: (prev?.cash ?? 0) + r.cash, level, market: mk.id, running: false };
-      writeSave({ ...s, pot: next });
-      setPot(next); setCarrying(countStock(s.storage));
-      setSum({ market: mk, outcome: "finished", level, gained: r.items, cash: r.cash, dropped: r.dropped, fine: 0, lostItems: 0, lostCash: 0, stumbles: r.stumbles });
-      setUi("pot");
-    } else {
-      const fine = Math.min(s.money, fineFor(mk)), m = s.money - fine;
-      const lostItems = countStock(r.items) + (prev ? countStock(prev.items) : 0), lostCash = r.cash + (prev?.cash ?? 0);
-      writeSave({ ...s, money: m, pot: null });
-      setMoney(m); setPot(null);
-      setMarket(rollMarket(s.junction, mk.id)); // the next fresh run goes somewhere new
-      setSum({ market: mk, outcome: "caught", level, gained: emptyStock(), cash: 0, dropped: 0, fine, lostItems, lostCash, stumbles: r.stumbles });
-      setUi("result");
-    }
-  }, []);
+  // Send the result of a run to the server. Done once per run; the server clamps it to what the market and run time allow.
+  const finish = useCallback(async (r: RunResult) => {
+    const mk = marketRef.current, s = saveRef.current;
+    if (applied.current || !mk || !s) return; applied.current = true;
+    const prev = s.pot;
+    try {
+      if (r.outcome === "finished") {
+        const next = toPot((await api.finish(r.items, r.cash)).pot);
+        saveRef.current = { ...s, pot: next };
+        setPot(next);
+        setSum({ market: mk, outcome: "finished", level: next.level, gained: r.items, cash: r.cash, dropped: r.dropped, fine: 0, lostItems: 0, lostCash: 0, stumbles: r.stumbles });
+        setUi("pot");
+      } else {
+        const m = (await api.fail()).money, fine = Math.max(0, s.money - m), level = runLevel.current;
+        const lostItems = countStock(r.items) + (prev ? countStock(prev.items) : 0), lostCash = r.cash + (prev?.cash ?? 0);
+        saveRef.current = { ...s, money: m, pot: null };
+        setMoney(m); setPot(null);
+        setMarket(rollMarket(s.junction, mk.id)); // the next fresh run goes somewhere new
+        setSum({ market: mk, outcome: "caught", level, gained: emptyStock(), cash: 0, dropped: 0, fine, lostItems, lostCash, stumbles: r.stumbles });
+        setUi("result");
+      }
+    } catch { setNotice("Your run could not be saved. Reloading your game."); setUi("ready"); void refresh(); }
+  }, [refresh]);
   const finishRef = useRef(finish);
   finishRef.current = finish;
 
   useEffect(() => {
-    refresh();
+    void refresh();
     const canvas = ref.current!;
     let stop = () => {}; let dead = false;
     Promise.all([import("@/game/scenes/RunnerScene"), document.fonts.load("24px Anton").catch(() => [])]).then(([{ RunnerScene }]) => {
       if (dead) return;
       const reduced = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
-      const s = new RunnerScene(canvas, { avatar: loadAvatar(), market: marketRef.current ?? rollMarket(loadSave().junction), reducedMotion: reduced, onEnd: (r) => finishRef.current(r) });
+      const s = new RunnerScene(canvas, { avatar: loadAvatar(), market: marketRef.current ?? rollMarket("ojuelegba"), reducedMotion: reduced, onEnd: (r) => finishRef.current(r) });
       s.start(); sceneRef.current = s; setReady(true);
       const io = new IntersectionObserver(([e]) => (e.isIntersecting ? s.resume() : s.pause()));
       io.observe(canvas);
@@ -110,49 +107,63 @@ export default function RunnerView() {
   // keep the scene pointed at the market that has been rolled
   useEffect(() => { if (ready && market) sceneRef.current?.setMarket(market); }, [ready, market]);
 
-  const fee = market?.fee ?? 0;
+  const minFee = feeRange(junction)[0], maxFee = feeRange(junction)[1];
   const space = STORAGE_CAP - carrying;
-  const canRun = ready && !!market && !pot && money >= fee && space > 0;
+  const canRun = ready && !busy && !pot && money >= minFee && space > 0;
 
-  const start = (level: number, room: number) => {
-    const sc = sceneRef.current; if (!sc || !market) return;
-    sc.setMarket(market);
+  const start = (level: number, room: number, mk: Market) => {
+    const sc = sceneRef.current; if (!sc) return;
+    marketRef.current = mk; sc.setMarket(mk);
     applied.current = false; runLevel.current = level; setSum(null); setNotice(""); setUi("running");
     sc.begin(room, level);
   };
 
-  const run = () => {
-    const s = loadSave();
-    if (!market || s.pot || s.money < market.fee || countStock(s.storage) >= STORAGE_CAP) return;
-    writeSave({ ...s, money: s.money - market.fee }); // the fee is paid up front, win or lose
-    setMoney(s.money - market.fee);
-    start(1, STORAGE_CAP - countStock(s.storage));
+  /** The server rolls the market and takes the fee up front, win or lose. */
+  const run = async () => {
+    const s = saveRef.current;
+    if (!canRun || !s) return; setBusy(true);
+    try {
+      const r = await api.start(), mk = marketById(r.market)!;
+      saveRef.current = { ...s, money: r.money, pot: null };
+      setMoney(r.money); setMarket(mk);
+      start(1, r.room, mk);
+    } catch (e) {
+      setNotice(e instanceof ApiError && e.status === 402 ? "You cannot afford the market the draw picked. Earn a bit more and try again." : "Could not start the run. Try again.");
+      void refresh();
+    } finally { setBusy(false); }
   };
 
-  /** Run the same market again with bigger rewards. The pot stays at risk, and is flagged so closing the page does not dodge a catch. */
-  const pushOn = () => {
-    const s = loadSave(), p = s.pot; if (!p || p.level >= MAX_LEVEL || !market) return;
-    writeSave({ ...s, pot: { ...p, running: true } });
-    start(p.level + 1, Math.max(0, STORAGE_CAP - countStock(s.storage) - countStock(p.items)));
+  /** Run the same market again with bigger rewards. The server flags the pot as running, so closing the page does not dodge a catch. */
+  const pushOn = async () => {
+    const s = saveRef.current, p = s?.pot; if (!s || !p || busy || p.level >= MAX_LEVEL || !market) return; setBusy(true);
+    try {
+      const r = await api.push();
+      saveRef.current = { ...s, pot: { ...p, running: true } };
+      start(r.level, Math.max(0, STORAGE_CAP - countStock(s.storage) - countStock(p.items)), market);
+    } catch { setNotice("Could not start that run. Try again."); void refresh(); }
+    finally { setBusy(false); }
   };
 
-  const bank = () => {
-    const s = loadSave(), p = s.pot; if (!p) return;
-    const b = bankAll(s, p);
-    writeSave({ ...s, money: b.money, storage: b.storage, pot: null });
-    setMoney(b.money); setCarrying(countStock(b.storage)); setPot(null); setSum(null);
-    setNotice(`Banked! ${naira(p.cash)} cash and ${countStock(p.items) - b.dropped} items are safe at home${b.dropped ? ` (${b.dropped} dropped, no space)` : ""}.`);
-    setMarket(rollMarket(s.junction, p.market)); setUi("ready");
+  const bank = async () => {
+    const s = saveRef.current, p = s?.pot; if (!s || !p || busy) return; setBusy(true);
+    try {
+      const b = await api.bank();
+      const kept = countStock(b.storage) - countStock(s.storage), dropped = Math.max(0, countStock(p.items) - kept);
+      saveRef.current = { ...s, money: b.money, storage: b.storage, pot: null };
+      setMoney(b.money); setCarrying(countStock(b.storage)); setPot(null); setSum(null);
+      setNotice(`Banked! ${naira(p.cash)} cash and ${kept} items are safe at home${dropped ? ` (${dropped} dropped, no space)` : ""}.`);
+      setMarket(rollMarket(s.junction, p.market)); setUi("ready");
+    } catch { setNotice("Could not bank that. Reloading your game."); void refresh(); }
+    finally { setBusy(false); }
   };
 
-  const why = !ready || !market ? "Loading the street..." : space <= 0 ? "Your stock at home is full. Go and sell some first." : money < fee ? `You need ${naira(fee)} to run to ${market.name}.` : "";
-  const goods = (m: Market) => (Object.keys(m.items) as ItemId[]).sort((a, b) => (m.items[b] ?? 0) - (m.items[a] ?? 0));
+  const why = !ready ? "Loading the street..." : space <= 0 ? "Your stock at home is full. Go and sell some first." : money < minFee ? `You need at least ${naira(minFee)} to run to a market.` : "";
   const potChips = (p: Pot) => ITEM_IDS.filter((id) => p.items[id] > 0).map((id) => <li key={id}><span aria-hidden>{ITEMS[id].icon}</span> {ITEMS[id].name} x{p.items[id]}</li>);
 
   return (
     <>
       <div className="frame runner">
-        <canvas ref={ref} aria-label={`${market?.name ?? "Market"} run: dodge LASTMA and grab stock`} />
+        <canvas ref={ref} aria-label="Market run: dodge LASTMA and grab stock" />
       </div>
 
       {ui === "running" && (
@@ -169,36 +180,26 @@ export default function RunnerView() {
       {ui === "ready" && (
         <section className="panel" aria-label="Start a run">
           <div className="panel-head">
-            <h2>{market ? `Run to ${market.name}` : "Finding a market..."}</h2>
+            <h2>Run to a market</h2>
             <p className="money">You have <strong>{naira(money)}</strong></p>
           </div>
           {notice && <p className="banked" role="status">{notice}</p>}
-          {market && (
-            <>
-              <p className="where">
-                <span className="tier" aria-label={`${market.tier} out of 3 stars`}>{stars(market)}</span>
-                Today&apos;s market for <strong>{JUNCTIONS[junction].name}</strong>. {market.blurb}
-              </p>
-              <p className="note">You can pick up:</p>
-              <ul className="chips" aria-label={`Goods at ${market.name}`}>
-                {goods(market).map((id) => <li key={id}><span aria-hidden>{ITEMS[id].icon}</span> {ITEMS[id].name}</li>)}
-                <li>Cash up to {naira(market.cash[2])}</li>
-              </ul>
-              <ul className="rules">
-                <li><strong>Entry:</strong> {naira(market.fee)}, paid up front</li>
-                <li><strong>Caught:</strong> fine of up to {naira(fineFor(market))}, and you lose everything you have not banked</li>
-                <li><strong>Made it:</strong> bank your winnings, or risk them to run again for x2, x3 and x4 rewards on a faster, tougher road</li>
-                <li><strong>At home:</strong> {carrying} of {STORAGE_CAP} in stock</li>
-              </ul>
-              <p className="note">
-                The market is picked at random each run from the places near {JUNCTIONS[junction].name}:{" "}
-                {marketsFor(junction).map((m) => `${m.name} (${naira(m.fee)})`).join(", ")}.
-                Dearer markets stock better goods. Work a different junction to see other markets.
-              </p>
-            </>
-          )}
+          <p className="where">
+            The game picks a market at random for <strong>{JUNCTIONS[junction].name}</strong> when you pay.
+          </p>
+          <ul className="rules">
+            <li><strong>Entry:</strong> {naira(minFee)} to {naira(maxFee)} depending on the market, paid up front</li>
+            <li><strong>Caught:</strong> fine of up to {naira(maxFee * 2)}, and you lose everything you have not banked</li>
+            <li><strong>Made it:</strong> bank your winnings, or risk them to run again for x2, x3 and x4 rewards on a faster, tougher road</li>
+            <li><strong>At home:</strong> {carrying} of {STORAGE_CAP} in stock</li>
+          </ul>
+          <p className="note">
+            Markets near {JUNCTIONS[junction].name}:{" "}
+            {marketsFor(junction).map((m) => `${m.name} (${naira(m.fee)})`).join(", ")}.
+            Dearer markets stock better goods. Work a different junction to see other markets.
+          </p>
           <div className="btns">
-            <button className="btn" onClick={run} disabled={!canRun}>{market ? `Pay ${naira(fee)} and run` : "Loading"}</button>
+            <button className="btn" onClick={run} disabled={!canRun}>{ready ? "Pay entry and run" : "Loading"}</button>
             <Link className="btn alt" href="/play">Back to the junction</Link>
           </div>
           {why && <p className="why" role="status">{why}</p>}
@@ -228,8 +229,8 @@ export default function RunnerView() {
             <p className="risk">You cleared the top level. Time to bank it.</p>
           )}
           <div className="btns">
-            <button className="btn" onClick={bank}>Bank it</button>
-            {pot.level < MAX_LEVEL && <button className="btn risky" onClick={pushOn}>Risk it: x{pot.level + 1} run</button>}
+            <button className="btn" onClick={bank} disabled={busy}>Bank it</button>
+            {pot.level < MAX_LEVEL && <button className="btn risky" onClick={pushOn} disabled={busy}>Risk it: x{pot.level + 1} run</button>}
           </div>
         </section>
       )}

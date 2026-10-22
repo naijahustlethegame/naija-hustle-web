@@ -1,7 +1,9 @@
 "use client";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
-import { bankJunction, bankPlayer, loadAvatar, loadSave } from "@/lib/storage";
+import { loadAvatar } from "@/lib/storage";
+import { api, loadPlayer } from "@/lib/api";
+import { Sync } from "@/lib/sync";
 import { CAPACITY, CORE_ITEMS, ITEMS, ITEM_IDS, countStock, naira } from "@/game/engine/items";
 import { JUNCTION_LIST } from "@/game/engine/junctions";
 import { feeRange, marketsFor } from "@/game/engine/markets";
@@ -15,6 +17,7 @@ export default function GameView({ demo = false }: { demo?: boolean }) {
   const ref = useRef<HTMLCanvasElement>(null);
   const [scene, setScene] = useState<JunctionScene | null>(null);
   const [snap, setSnap] = useState<Snapshot | null>(null);
+  const [failed, setFailed] = useState(false);
 
   useEffect(() => {
     const canvas = ref.current!;
@@ -22,20 +25,24 @@ export default function GameView({ demo = false }: { demo?: boolean }) {
     let dead = false;
     // Lazy-load the engine so the page JS stays small.
     // Wait for the display font so the backdrop's painted signs are drawn with it.
-    Promise.all([import("@/game/scenes/JunctionScene"), document.fonts.load("24px Anton").catch(() => [])]).then(([{ JunctionScene }]) => {
+    Promise.all([import("@/game/scenes/JunctionScene"), document.fonts.load("24px Anton").catch(() => []), demo ? null : loadPlayer()]).then(([{ JunctionScene }, , save]) => {
       if (dead) return;
-      const save = demo ? null : loadSave();
-      const s = new JunctionScene(canvas, {
+      let s!: InstanceType<typeof JunctionScene>;
+      // The server owns money and stock. The scene queues changes here and they are sent in batches.
+      const sync = demo ? undefined : new Sync(async () => { s.applyServer(await loadPlayer()); });
+      s = new JunctionScene(canvas, {
         demo, multi: true, avatar: loadAvatar(), money: save?.money, stock: save?.stock, storage: save?.storage, junction: save?.junction,
-        onBank: demo ? undefined : bankPlayer, onJunction: demo ? undefined : bankJunction,
+        sync, onJunction: demo ? undefined : (j) => { api.setJunction(j).catch(() => {}); },
       });
       s.start();
       setScene(s); setSnap(s.getSnapshot());
       const unsub = s.subscribe(() => setSnap(s.getSnapshot()));
       const io = new IntersectionObserver(([e]) => (e.isIntersecting ? s.resume() : s.pause()));
       io.observe(canvas);
-      stop = () => { unsub(); io.disconnect(); s.destroy(); };
-    });
+      const hide = () => sync?.flush(true);
+      window.addEventListener("pagehide", hide);
+      stop = () => { unsub(); io.disconnect(); window.removeEventListener("pagehide", hide); s.destroy(); };
+    }).catch(() => { if (!dead) setFailed(true); });
     return () => { dead = true; stop(); };
   }, [demo]);
 
@@ -44,6 +51,7 @@ export default function GameView({ demo = false }: { demo?: boolean }) {
       <div className="frame">
         <canvas ref={ref} aria-label={demo ? "Live gameplay: a hawker working a red light" : "Naija Hustle street"} />
       </div>
+      {failed && <p className="why" role="alert">Could not reach the server. Refresh to try again.</p>}
       {!demo && <p className="rotate-hint">Turn your phone sideways for a bigger street.</p>}
       {!demo && scene && snap && <Controls scene={scene} snap={snap} />}
     </>

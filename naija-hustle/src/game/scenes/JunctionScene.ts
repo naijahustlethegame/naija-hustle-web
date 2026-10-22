@@ -11,6 +11,7 @@ import { Loop } from "../engine/loop";
 import { hashString, mulberry32, type Rng } from "../engine/rng";
 import { H, W, type Buyer, type ItemId, type Stock } from "../engine/types";
 import { RoomClient, type RoomInfo } from "@/lib/room";
+import type { Sync } from "@/lib/sync";
 
 export type Phase = LightPhase;
 type VState = "arriving" | "stopped" | "leaving";
@@ -33,7 +34,8 @@ export type Snapshot = {
 type Opts = {
   demo: boolean; avatar: AvatarConfig; money?: number; stock?: Stock; storage?: Stock;
   junction?: JunctionId;
-  onBank?: (money: number, stock: Stock, storage: Stock) => void;
+  /** Queues the player's changes for the server, which owns money and stock. */
+  sync?: Sync;
   onJunction?: (id: JunctionId) => void;
   /** Wall clock in ms. Only tests pass this. */
   clock?: () => number;
@@ -160,7 +162,7 @@ export class JunctionScene {
   start() { this.loop.start(); }
   pause() { this.loop.stop(); }
   resume() { this.loop.start(); this.needSync = true; } // the light moved on while we were away
-  destroy() { this.net?.close(); this.loop.stop(); this.canvas.removeEventListener("pointerdown", this.onTap); this.listeners.clear(); }
+  destroy() { this.opts.sync?.flush(true); this.net?.close(); this.loop.stop(); this.canvas.removeEventListener("pointerdown", this.onTap); this.listeners.clear(); }
 
   // ---------- React bridge ----------
   subscribe = (fn: () => void) => { this.listeners.add(fn); return () => { this.listeners.delete(fn); }; };
@@ -174,20 +176,22 @@ export class JunctionScene {
   }
   private notify() {
     this.snap = this.makeSnap();
-    if (!this.demo) this.opts.onBank?.(this.money, { ...this.stock }, { ...this.storage });
     this.listeners.forEach((f) => f());
   }
+
+  /** Replace local state with the server's, after a sync error. */
+  applyServer(p: { money: number; stock: Stock; storage: Stock }) { this.money = p.money; this.stock = { ...p.stock }; this.storage = { ...p.storage }; this.notify(); }
 
   // ---------- shop and entering (only while you are not on the road) ----------
   /** Move one item from your stock at home onto your tray. */
   load(id: ItemId) {
     if (this.playing || this.storage[id] <= 0 || countStock(this.stock) >= CAPACITY) return;
-    this.storage[id]--; this.stock[id]++; this.notify();
+    this.storage[id]--; this.stock[id]++; this.opts.sync?.moveTray(id, 1); this.notify();
   }
   /** Put one item from your tray back at home. */
   unload(id: ItemId) {
     if (this.playing || this.stock[id] <= 0) return;
-    this.stock[id]--; this.storage[id]++; this.notify();
+    this.stock[id]--; this.storage[id]++; this.opts.sync?.moveTray(id, -1); this.notify();
   }
   selectJunction(id: JunctionId) { if (!this.playing && id !== this.jid) { this.jid = id; this.net?.join({ junction: id, play: false }); this.needSync = true; this.opts.onJunction?.(id); this.notify(); } }
 
@@ -207,6 +211,7 @@ export class JunctionScene {
       return;
     }
     this.cancelAction(); this.playing = false; this.pstate = "idle"; this.streak = 0;
+    this.opts.sync?.flush();
     this.net?.join({ junction: this.jid, play: false }); // give the seat back
     this.notify();
   }
@@ -216,7 +221,7 @@ export class JunctionScene {
   private loseRandomItem(): ItemId | null {
     const have = ITEM_IDS.filter((k) => this.stock[k] > 0);
     if (!have.length) return null;
-    const k = pickOne(have); this.stock[k]--; this.stockPulse = 0.8; return k;
+    const k = pickOne(have); this.stock[k]--; this.stockPulse = 0.8; this.opts.sync?.lose(k); return k;
   }
 
   // ---------- the light cycle ----------
@@ -386,7 +391,7 @@ export class JunctionScene {
     if (push && Math.random() > b.pushP) { this.reject(v, pickOne(PUSH_FAIL_LINES)); return; }
     const price = this.priceFor(v, push);
     this.stock[b.want]--; this.money += price; this.stockPulse = 0.8;
-    v.sold = true; v.done = true; this.net?.settle(v.key, true, price);
+    v.sold = true; v.done = true; this.net?.settle(v.key, true, price); this.opts.sync?.sale(b.want, price);
     this.streak++; this.cur.sales++; this.cur.earned += price; this.cur.bestStreak = Math.max(this.cur.bestStreak, this.streak);
     this.pops.push({ x: v.x, y: v.y - v.h / 2 - 16, t: 0, text: `+${naira(price)}`, color: "#7dffa8" });
     this.say(v, pickOne(YES_LINES), "#fff", 22);
@@ -507,7 +512,7 @@ export class JunctionScene {
   }
 
   private hit() {
-    const loss = Math.min(this.money, 50); this.money -= loss;
+    const loss = Math.min(this.money, 50); this.money -= loss; this.opts.sync?.hit();
     const lost = this.loseRandomItem();
     this.cur.hits++; this.cur.earned -= loss; this.streak = 0;
     this.pops.push({ x: this.px, y: this.py - 80, t: 0, text: `Ouch! -${naira(loss)}${lost ? ` and ${ITEMS[lost].name.toLowerCase()}` : ""}`, color: "#ff8a80" });
