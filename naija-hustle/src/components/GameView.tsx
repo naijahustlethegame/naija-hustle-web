@@ -100,7 +100,7 @@ function Controls({ scene, snap }: { scene: JunctionScene; snap: Snapshot }) {
             onClick={() => scene.selectJunction(j.id)}>
             <strong>{j.name}</strong>
             <span>{j.blurb}</span>
-            <span className="meta">Red light: {j.red} seconds</span>
+            <span className="meta">Red light: about {j.red} seconds</span>
             <span className="meta">Market entry: {naira(feeRange(j.id)[0])} to {naira(feeRange(j.id)[1])}</span>
             <span className="meta mk">{marketsFor(j.id).map((m) => m.name).join(", ")}</span>
           </button>

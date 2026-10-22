@@ -15,8 +15,10 @@ const NORMAL: Omit<RoundEvent, "die">[] = [
 ];
 const GOOD: Omit<RoundEvent, "die">[] = [
   { kind: "sun", title: "Hot sun", text: "Everybody wants water and cold drinks.", good: true },
-  { kind: "goslow", title: "Go-slow", text: "Traffic is stuck. More cars to sell to.", good: true },
+  { kind: "goslow", title: "Go-slow", text: "Cars stuck even on green. Risk it!", good: true },
 ];
+/** A hold-up: the light goes green but the cars stay put for a while. */
+export const GOSLOW = GOOD[1]!;
 
 export function rollRoundEvent(rng: Rng = Math.random): RoundEvent {
   const die = 1 + Math.floor(rng() * 6);

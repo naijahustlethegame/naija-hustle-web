@@ -1,9 +1,9 @@
 import { drawAvatar, type AvatarConfig } from "../avatar/avatar";
 import { NO_LINES, PUSH_FAIL_LINES, SPEC, YES_LINES, makeBuyer, pickColor, pickKind } from "../engine/buyers";
 import { OFFICER_SPOTS, drawOfficer, drawWeatherFront, drawWeatherTint } from "../engine/weather";
-import { WARN, lightAt, type LightPhase } from "../engine/clock";
+import { WARN, cycleLength, lightAt, redFor, type LightPhase } from "../engine/clock";
 import { drawLight, drawVehicle, renderBackdrop, type VehView } from "../engine/draw";
-import { rollRoundEvent, type RoundEvent } from "../engine/events";
+import { GOSLOW, rollRoundEvent, type RoundEvent } from "../engine/events";
 import { CAPACITY, CORE_ITEMS, ITEMS, ITEM_IDS, countStock, emptyStock, naira } from "../engine/items";
 import { JUNCTIONS, JUNCTION_LIST, type JunctionId } from "../engine/junctions";
 import { BOTTOM, DISPLAY_FONT, HOME_Y, LANE_Y, PLAYER_SPEED, STOP_X, TOP } from "../engine/layout";
@@ -68,10 +68,13 @@ export class JunctionScene {
   private cycle = -1; private needSync = true;
   private jid: JunctionId = "ojuelegba";
   private money: number; private stock: Stock; private storage: Stock;
-  private vehs: Veh[] = []; private ambient: (VehView & { vx: number })[] = [];
+  private vehs: Veh[] = []; private ambient: (VehView & { vx: number; lane: number })[] = [];
   private pops: Pop[] = [];
   private nextId = 1; private t = 0; private ambT = [0.2, 0.9, 1.5];
-  private redLeft = 0; private toRed = 0;
+  private redLeft = 0; private amber = false;
+  // go-slow: the light is green but the cars stay stuck until the hold-up clears (holdLen seconds into the green)
+  private holding = false; private holdLen = 0; private greenT = 0; private honked = false;
+  private extraN = 0; private extraAt = 1; private jamRng: Rng = Math.random;
   private ev: RoundEvent | null = null; private bannerT = 0;
   private streak = 0; private jumped = false;
   private cur: Stats = zero(); private last: Stats | null = null; private lastT = 0;
@@ -206,7 +209,7 @@ export class JunctionScene {
   /** Walk off and go shopping. You cannot leave while the cars are moving and you are in the road. */
   leave() {
     if (!this.playing || this.demo) return;
-    if (this.phase === "green" && this.inRoad()) {
+    if (this.danger() && this.inRoad()) {
       this.pops.push({ x: this.px, y: this.py - 80, t: 0, text: "Get off the road first!", color: "#ffd84a" });
       return;
     }
@@ -228,7 +231,7 @@ export class JunctionScene {
   private syncLight() {
     const J = JUNCTIONS[this.jid];
     const L = lightAt(this.clockFn(), J);
-    this.redLeft = L.redLeft; this.toRed = L.toRed;
+    this.redLeft = L.redLeft; this.amber = L.amber;
     if (this.needSync || L.cycle !== this.cycle) { this.beginCycle(L.cycle, L.local, L.phase); return; }
     if (L.phase !== this.phase) {
       this.phase = L.phase;
@@ -257,10 +260,18 @@ export class JunctionScene {
     this.cycle = cycle; this.phase = phase; this.evT = 0;
     const rng = mulberry32(hashString(`${this.jid}:${this.roomId ?? ""}:${cycle}`)); // everybody at this junction gets the same cars
     this.ev = rollRoundEvent(rng);
+    // Some lights end in a go-slow. Busy junctions get them more often. Seeded, so everybody there sees the same hold-up.
+    const jn = JUNCTIONS[this.jid];
+    this.jamRng = mulberry32(hashString(`${this.jid}:${this.roomId ?? ""}:${cycle}:jam`));
+    this.holdLen = 0; this.holding = false;
+    if (this.ev.kind === "goslow" || (this.ev.kind === "normal" && this.jamRng() < jn.jam)) {
+      const hold = Math.min(cycleLength(jn) - redFor(jn, cycle) - 4.5, 3 + this.jamRng() * 4); // always clears with time to spare
+      if (hold >= 2) { this.holdLen = hold; if (this.ev.kind !== "goslow") this.ev = { die: this.ev.die, ...GOSLOW }; }
+    }
     this.cur = zero(); this.jumped = false; this.vehs = []; this.pops = [];
     this.haggle = null; this.claimV = null; if (this.pstate === "running" || this.pstate === "haggle" || this.pstate === "wait") this.pstate = "idle"; this.target = null;
     if (phase !== "green") {
-      this.ambient = [];
+      if (!rolled) this.ambient = [];
       this.buildQueue(rng);
       let el = Math.min(local, 7); // joined late: the cars have already pulled up
       while (el > 0) { const s = Math.min(0.05, el); this.updateTraffic(s); el -= s; }
@@ -295,24 +306,74 @@ export class JunctionScene {
   }
 
   private goGreen() {
-    this.phase = "green";
+    this.phase = "green"; this.greenT = 0; this.honked = false;
+    if (this.holdLen > 0 && this.vehs.length > 0) { // a go-slow: the light is green but the cars are stuck
+      this.holding = true; this.extraN = 0; this.extraAt = 1;
+      this.pops.push({ x: W / 2, y: 190, t: 0, text: "GO-SLOW! CARS NO DEY MOVE", color: "#ffb347" });
+      if (this.demo) this.clearRoad(); // the homepage bot always plays it safe
+      this.notify();
+      return;
+    }
+    this.release();
+  }
+
+  /** The cars are free to move, so the road is dangerous. A go-slow hold-up is safe until it clears. */
+  private danger() { return this.phase === "green" && (!this.holding || this.demo); }
+
+  /** Drop what you were doing and, if you are in the road, freeze for a moment before you run. That is what makes standing at the front car risky. */
+  private clearRoad() {
     if (this.haggle) { this.say(this.haggle.v, "Light don change!", "#fff"); this.haggle = null; }
     this.target = null;
     if (this.playing) {
       if (this.pstate === "running" || this.pstate === "haggle") this.pstate = "idle";
       if (this.inRoad() && this.pstate !== "walk") {
-        // you freeze for a moment before you run. That is what makes standing at the front car risky.
         this.pstate = "pause"; this.pauseT = Math.max(this.pauseT, 0.55); this.lockT = Math.max(this.lockT, 0.55);
         this.pops.push({ x: this.px, y: this.py - 70, t: 0, text: "Run!", color: "#7dffa8" });
       }
     }
-    // the front car goes first, the rest follow one by one
+  }
+
+  /** The cars move off: at the green, or when a go-slow clears. The front car goes first, the rest follow one by one. */
+  private release() {
+    this.holding = false;
+    this.clearRoad();
+    const jam = this.holdLen > 0; // a cleared jam moves off faster
     for (let lane = 0; lane < LANE_Y.length; lane++) {
       const cars = this.vehs.filter((v) => v.lane === lane && v.st === "stopped").sort((a, b) => b.slotX - a.slotX);
-      cars.forEach((v, i) => { v.launchIn = 0.35 + i * 0.45 + Math.random() * 0.3; });
+      cars.forEach((v, i) => { v.launchIn = jam ? 0.12 + i * 0.28 + Math.random() * 0.2 : 0.35 + i * 0.45 + Math.random() * 0.3; });
     }
     if (this.playing || this.demo) { this.last = { ...this.cur }; this.lastT = 7; }
     this.notify();
+  }
+
+  /** While a go-slow lasts, more cars keep rolling up behind the stuck ones. Then the horns start, and it clears. */
+  private updateJam() {
+    while (this.greenT >= this.extraAt && this.greenT < this.holdLen - 0.6) {
+      this.addJamCar(this.extraN++ % LANE_Y.length);
+      this.extraAt += 1.1 + this.jamRng() * 0.9;
+    }
+    if (!this.honked && this.greenT >= this.holdLen - 0.8) {
+      this.honked = true; // the only warning that the road is about to clear
+      for (const v of this.vehs.filter((q) => q.st === "stopped").sort((a, b) => b.slotX - a.slotX).slice(0, 3)) {
+        this.pops.push({ x: v.x, y: v.y - v.h / 2 - 12, t: 0, text: pickOne(["Peeen!", "Pam pam!", "Oya move!"]), color: "#ffd84a" });
+      }
+    }
+    if (this.greenT >= this.holdLen) this.release();
+  }
+
+  private addJamCar(lane: number) {
+    const j = JUNCTIONS[this.jid], rng = this.jamRng, kind = pickKind(j.mix, rng), s = SPEC[kind];
+    const inLane = this.vehs.filter((v) => v.lane === lane && v.st !== "leaving").sort((a, b) => a.slotX - b.slotX);
+    const leader = inLane[0] ?? null;
+    const slotX = (leader ? leader.slotX - leader.w / 2 : STOP_X - 6) - 16 - s.w / 2;
+    if (slotX - s.w / 2 < 40) return; // the lane is full
+    const buyer = makeBuyer(kind, this.ev?.kind ?? "normal", rng);
+    this.vehs.push({
+      id: this.nextId++, kind, x: -s.w / 2 - 40, y: LANE_Y[lane]! + 20 - s.h / 2 - 2, w: s.w, h: s.h,
+      tint: pickColor(kind, rng), tell: buyer.tell, sold: false,
+      lane, slotX, vx: 0, st: "arriving", buyer, done: false, launchIn: 0, leader,
+      key: `${this.cycle}:${lane}:${10 + this.extraN}`, taken: false,
+    });
   }
 
   // ---------- input ----------
@@ -421,7 +482,7 @@ export class JunctionScene {
     if (this.lastT > 0) this.lastT -= dt;
     if (this.stockPulse > 0) this.stockPulse -= dt;
     this.evT += dt;
-    if (this.ev?.kind === "goslow" && this.phase !== "green" && (this.honkT -= dt) <= 0) {
+    if (this.ev?.kind === "goslow" && (this.phase !== "green" || this.holding) && (this.honkT -= dt) <= 0) {
       this.honkT = 0.7 + Math.random() * 1.1; // a go-slow means horns
       const stopped = this.vehs.filter((v) => v.st === "stopped");
       if (stopped.length) { const v = pickOne(stopped); this.pops.push({ x: v.x, y: v.y - v.h / 2 - 12, t: 0, text: pickOne(["Pam pam!", "Peeen!", "Oya move!"]), color: "#ffd84a" }); }
@@ -430,6 +491,7 @@ export class JunctionScene {
     this.pops = this.pops.filter((p) => p.t < 1.1);
     this.inv -= dt; this.lockT -= dt;
     this.syncLight();
+    if (this.phase === "green") { this.greenT += dt; if (this.holding) this.updateJam(); }
     if (this.botOn()) this.botUpdate(dt);
     this.updateAmbient(dt);
     if (this.vehs.length) this.updateTraffic(dt);
@@ -439,20 +501,35 @@ export class JunctionScene {
     if (this.net && this.playing && !this.demo) this.net.pos(this.px, this.py, this.pstate);
   }
 
-  /** Cars passing while nobody is stopped, so the road is never empty. They are never in your way. */
+  /**
+   * Traffic that flows past while the light is green, thicker at busy junctions. When the light turns amber some
+   * drivers put their foot down to beat it. They are scenery: they never hit you, and they keep a gap from the car ahead.
+   */
   private updateAmbient(dt: number) {
     const j = JUNCTIONS[this.jid];
-    if (this.vehs.length === 0 && this.toRed > 4.5) {
+    if (this.phase === "green" && !this.holding) {
       LANE_Y.forEach((ly, i) => {
-        this.ambT[i] -= dt;
-        if (this.ambT[i] <= 0) {
-          const kind = pickKind(j.mix), s = SPEC[kind];
-          this.ambient.push({ id: this.nextId++, kind, x: -s.w, y: ly + 20 - s.h / 2 - 2, w: s.w, h: s.h, tint: pickColor(kind), tell: "ignore", sold: false, vx: rand(230, 300) });
-          this.ambT[i] = rand(1, 2.4);
-        }
+        this.ambT[i]! -= dt;
+        if (this.ambT[i]! > 0) return;
+        // wait until the cars that were stopped here have pulled away, and there is room at the edge
+        const busy = this.vehs.some((v) => v.lane === i && (v.st !== "leaving" || v.x < 330));
+        if (busy || this.ambient.some((a) => a.lane === i && a.x < a.w + 90)) { this.ambT[i] = 0.25; return; }
+        if (this.amber && Math.random() > 0.6) { this.ambT[i] = rand(0.3, 0.7); return; } // only some try to beat the amber
+        const kind = pickKind(j.mix), s = SPEC[kind];
+        this.ambient.push({ id: this.nextId++, kind, lane: i, x: -s.w, y: ly + 20 - s.h / 2 - 2, w: s.w, h: s.h, tint: pickColor(kind), tell: "ignore", sold: false, vx: this.amber ? rand(360, 440) : rand(230, 300) });
+        if (this.amber && Math.random() < 0.3) this.pops.push({ x: 110, y: ly - 10, t: 0, text: pickOne(["Oya go!", "Beat am!", "Peeen!"]), color: "#ffd84a" });
+        this.ambT[i] = this.amber ? rand(0.35, 0.8) : rand(0.9, 2.2) / j.flow;
       });
     }
     for (const a of this.ambient) a.x += a.vx * dt;
+    // keep a gap: nobody drives through the car in front
+    for (let i = 0; i < LANE_Y.length; i++) {
+      const row = this.ambient.filter((a) => a.lane === i).sort((a, b) => b.x - a.x);
+      for (let k = 1; k < row.length; k++) {
+        const ahead = row[k - 1]!, me = row[k]!, gap = ahead.x - ahead.w / 2 - me.w / 2 - 24;
+        if (me.x > ahead.x - (ahead.w + me.w) / 2 - 24) { me.x = ahead.x - (ahead.w + me.w) / 2 - 24; me.vx = Math.min(me.vx, ahead.vx); } else void gap;
+      }
+    }
     this.ambient = this.ambient.filter((a) => a.x < W + 120);
   }
 
@@ -464,7 +541,7 @@ export class JunctionScene {
         if (v.leader) nx = Math.min(nx, v.leader.x - v.leader.w / 2 - v.w / 2 - 10);
         if (v.slotX - nx < 1.2) { nx = v.slotX; v.st = "stopped"; }
         v.x = nx;
-      } else if (this.phase === "green" && v.st === "stopped") {
+      } else if (this.phase === "green" && !this.holding && v.st === "stopped") {
         v.launchIn -= dt;
         if (v.launchIn <= 0) { v.st = "leaving"; v.vx = 30; }
       } else if (v.st === "leaving") {
@@ -482,7 +559,7 @@ export class JunctionScene {
       this.pauseT -= dt;
       // if the light changed while you were being turned down, get off the road
       if (this.pauseT <= 0) {
-        if (this.phase === "green" && this.inRoad()) { this.dest = { x: this.px, y: HOME_Y }; this.pstate = "walk"; }
+        if (this.danger() && this.inRoad()) { this.dest = { x: this.px, y: HOME_Y }; this.pstate = "walk"; }
         else this.pstate = "idle";
       }
     } else if (this.pstate === "running" && this.target) {
@@ -565,7 +642,7 @@ export class JunctionScene {
     c.drawImage(this.bg(), 0, 0, W, H);
     const wk = this.ev ? Math.min(1, this.evT / 1.2) : 0, wkind = this.ev?.kind ?? "normal";
     drawWeatherTint(c, wkind, wk);
-    drawLight(c, this.phase, this.t);
+    drawLight(c, this.phase === "green" && this.amber ? "yellow" : this.phase, this.t);
 
     type D = { key: number; paint: () => void };
     const items: D[] = [];
@@ -651,19 +728,13 @@ export class JunctionScene {
       this.panel(W - 214, 12, 200, 44);
       this.text(`${n} / ${this.cap} HUSTLERS`, W - 114, 42, 22, n >= this.cap ? "#ff9f43" : "#7dffa8", "center");
     }
-    // light timer
+    // light status. No countdowns: watch the traffic light.
     const tx = W / 2 - 160;
     this.panel(tx, 12, 320, 44);
-    if (this.phase === "red" || this.phase === "yellow") {
-      const frac = Math.max(0, Math.min(1, this.redLeft / JUNCTIONS[this.jid].red));
-      c.fillStyle = "rgba(255,255,255,.14)"; c.beginPath(); c.roundRect(tx + 14, 38, 292, 10, 5); c.fill();
-      c.fillStyle = this.phase === "yellow" ? "#ffc400" : "#ff453a"; c.beginPath(); c.roundRect(tx + 14, 38, 292 * frac, 10, 5); c.fill();
-      this.text(this.phase === "yellow" ? "GET READY TO RUN!" : "RED LIGHT: SELL!", W / 2, 32, 20, this.phase === "yellow" ? "#ffd84a" : "#ffffff", "center");
-    } else if (this.vehs.length > 0) {
-      this.text(this.playing || this.demo ? "GREEN! GET OFF THE ROAD" : "GREEN LIGHT", W / 2, 42, 22, "#5cff9a", "center");
-    } else {
-      this.text(`NEXT RED IN ${Math.max(1, Math.ceil(this.toRed))}`, W / 2, 42, 22, "#ffffff", "center");
-    }
+    if (this.phase === "red") this.text("RED LIGHT: SELL!", W / 2, 42, 22, "#ffffff", "center");
+    else if (this.phase === "yellow") this.text("GET READY TO RUN!", W / 2, 42, 22, "#ffd84a", "center");
+    else if (this.holding) this.text(this.demo ? "GO-SLOW! CARS STUCK" : "GO-SLOW! RISK IT", W / 2, 42, 22, "#ffb347", "center");
+    else this.text(this.playing || this.demo ? "GREEN! GET OFF THE ROAD" : "GREEN LIGHT", W / 2, 42, 22, "#5cff9a", "center");
     // event banner at the start of a red, or how the last red went. Sits under the billboards.
     if (this.ev && this.bannerT > 0 && (this.phase === "red" || this.phase === "yellow")) {
       const e = this.ev, w = 440;
@@ -672,7 +743,7 @@ export class JunctionScene {
       c.font = "bold 14px sans-serif"; c.textAlign = "center"; c.fillStyle = "#fff";
       c.fillText(`🎲 ${e.die}  ${e.title}: ${e.text}`, W / 2, 175);
       c.globalAlpha = 1;
-    } else if (this.last && this.lastT > 0 && this.phase === "green") {
+    } else if (this.last && this.lastT > 0 && this.phase === "green" && !this.holding) {
       const l = this.last, w = 440;
       c.globalAlpha = Math.min(1, this.lastT);
       this.panel(W / 2 - w / 2, 156, w, 28, "rgba(27,27,34,.92)");
@@ -702,7 +773,7 @@ export class JunctionScene {
       this.text(`${this.streak} IN A ROW  +${Math.round(this.bonus() * 100)}%`, W - 106, H - 28, 20, "#fff", "center");
     }
     // the way out, shown while you are in the road
-    if (this.inRoad() && (this.phase === "yellow" || (this.phase === "red" && this.redLeft < 6)) && Math.floor(this.t * 3) % 2 === 0) {
+    if (this.inRoad() && this.phase === "yellow" && Math.floor(this.t * 3) % 2 === 0) {
       this.text("TAP THE PAVEMENT TO RUN BACK", W / 2, BOTTOM + 34, 22, "#ffd84a", "center");
     }
   }
