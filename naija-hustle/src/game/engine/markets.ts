@@ -33,8 +33,8 @@ export type Market = {
   look: Look;
 };
 
-/** The fine for getting caught is twice the entry fee, so dearer markets also cost more to lose. */
-export const fineFor = (m: Market) => m.fee * 2;
+/** The fine for getting caught equals the entry fee, so dearer markets also cost more to lose. */
+export const fineFor = (m: Market) => m.fee;
 
 const cheap = { cash: [30, 60, 120] as [number, number, number] };
 const mid = { cash: [60, 120, 300] as [number, number, number] };
@@ -44,7 +44,7 @@ export const MARKETS: Market[] = [
   // ---------------------------------------------------------------- Ojuelegba: street markets
   {
     id: "mushin", junction: "ojuelegba", name: "Mushin Market", tier: 1, fee: 100, ...cheap, cashChance: 0.2,
-    blurb: "Tin roofs and fresh produce. Cheap to enter, small pickings.",
+    blurb: "Cheap to enter, small prizes.",
     items: { water: 0.4, fruit: 0.25, snack: 0.2, bread: 0.15 },
     look: {
       skyTop: "#ffd36b", skyBottom: "#ff9a5a", sun: "rgba(255,255,255,.4)", sunX: 700,
@@ -59,7 +59,7 @@ export const MARKETS: Market[] = [
   },
   {
     id: "oshodi", junction: "ojuelegba", name: "Oshodi Market", tier: 1, fee: 140, ...cheap, cashChance: 0.22,
-    blurb: "A huge bus-park market. Water, drinks and hot bread by the crate.",
+    blurb: "Lots of water, drinks and hot bread.",
     items: { water: 0.3, drink: 0.25, snack: 0.2, bread: 0.15, fruit: 0.1 },
     look: {
       skyTop: "#e8b27a", skyBottom: "#d98866", sun: "rgba(255,225,170,.5)", sunX: 220,
@@ -74,7 +74,7 @@ export const MARKETS: Market[] = [
   },
   {
     id: "yaba", junction: "ojuelegba", name: "Yaba Market", tier: 1, fee: 200, ...cheap, cashChance: 0.24,
-    blurb: "Students and snack sellers, with the odd charger stall.",
+    blurb: "Snacks and drinks, and some chargers.",
     items: { drink: 0.3, snack: 0.3, water: 0.2, bread: 0.1, charger: 0.1 },
     look: {
       skyTop: "#ffd98a", skyBottom: "#ff9a7a", sun: "rgba(255,255,255,.45)", sunX: 760,
@@ -91,7 +91,7 @@ export const MARKETS: Market[] = [
   // ---------------------------------------------------------------- Obalende: trading hubs
   {
     id: "balogun", junction: "obalende", name: "Balogun Market", tier: 2, fee: 230, ...mid, cashChance: 0.24,
-    blurb: "The big one on the Island side. Good all-round stock.",
+    blurb: "A big market with a bit of everything.",
     items: { drink: 0.3, snack: 0.25, water: 0.15, bread: 0.15, charger: 0.15 },
     look: {
       skyTop: "#9fc6e8", skyBottom: "#e6eef2", sun: "rgba(255,255,255,.7)", sunX: 700,
@@ -106,7 +106,7 @@ export const MARKETS: Market[] = [
   },
   {
     id: "idumota", junction: "obalende", name: "Idumota Market", tier: 2, fee: 340, ...mid, cashChance: 0.26,
-    blurb: "Old brick lanes and busy traders. Chargers and a few gadgets.",
+    blurb: "Chargers and a few gadgets.",
     items: { snack: 0.3, drink: 0.3, charger: 0.2, gadget: 0.1, bread: 0.1 },
     look: {
       skyTop: "#ffd29a", skyBottom: "#f08f7a", sun: "rgba(255,240,200,.55)", sunX: 180,
@@ -121,7 +121,7 @@ export const MARKETS: Market[] = [
   },
   {
     id: "computer", junction: "obalende", name: "Computer Village", tier: 2, fee: 490, ...mid, cashChance: 0.28,
-    blurb: "Phones, chargers and gadgets. Pricey to enter, worth it if you grab the right things.",
+    blurb: "Chargers and gadgets. Costs more to enter.",
     items: { charger: 0.4, gadget: 0.2, drink: 0.15, snack: 0.15, bread: 0.1 },
     look: {
       skyTop: "#7fb2e0", skyBottom: "#dfeaf3", sun: "rgba(255,255,255,.75)", sunX: 760,
@@ -138,7 +138,7 @@ export const MARKETS: Market[] = [
   // ---------------------------------------------------------------- Lekki: malls and craft markets
   {
     id: "craft", junction: "lekki", name: "Lekki Craft Market", tier: 3, fee: 600, ...rich, cashChance: 0.26,
-    blurb: "Sunglasses and craft stalls under the palms. Tourists pay well.",
+    blurb: "Sunglasses and perfume. Rich buyers pay well.",
     items: { drink: 0.3, shades: 0.3, snack: 0.2, perfume: 0.1, gadget: 0.1 },
     look: {
       skyTop: "#4fb0f2", skyBottom: "#d3f0ff", sun: "rgba(255,255,255,.85)", sunX: 780,
@@ -153,7 +153,7 @@ export const MARKETS: Market[] = [
   },
   {
     id: "ikate", junction: "lekki", name: "Ikate Plaza", tier: 3, fee: 760, ...rich, cashChance: 0.28,
-    blurb: "Glass storefronts and lounge bars. Gadgets, shades and perfume.",
+    blurb: "Gadgets, sunglasses and perfume.",
     items: { drink: 0.25, gadget: 0.25, shades: 0.2, perfume: 0.2, snack: 0.1 },
     look: {
       skyTop: "#ffb86b", skyBottom: "#e8647c", sun: "rgba(255,245,210,.6)", sunX: 200,
@@ -168,7 +168,7 @@ export const MARKETS: Market[] = [
   },
   {
     id: "vimall", junction: "lekki", name: "Victoria Island Mall", tier: 3, fee: 930, ...rich, cashChance: 0.3,
-    blurb: "Air-conditioned luxury. The priciest entry, and the best stock on the lagoon.",
+    blurb: "The most expensive entry, and the best things.",
     items: { perfume: 0.3, gadget: 0.3, shades: 0.2, drink: 0.15, snack: 0.05 },
     look: {
       skyTop: "#2f8fd8", skyBottom: "#bfe6ff", sun: "rgba(255,255,255,.85)", sunX: 140,

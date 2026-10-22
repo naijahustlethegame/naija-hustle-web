@@ -19,7 +19,7 @@ export const JUNCTIONS: Record<JunctionId, Junction> = {
   ojuelegba: {
     id: "ojuelegba",
     name: "Ojuelegba",
-    blurb: "Okadas and keke everywhere. Long light, small pay.",
+    blurb: "Lots of okadas and keke. Long red light, small money.",
     red: 24,
     perLane: [4, 6],
     mix: { okada: 5, keke: 4, danfo: 3, car: 2, jeep: 0.3 },
@@ -29,7 +29,7 @@ export const JUNCTIONS: Record<JunctionId, Junction> = {
   obalende: {
     id: "obalende",
     name: "Obalende",
-    blurb: "Danfo crowds and office cars. Snacks move fast here.",
+    blurb: "Danfos and office cars. Snacks sell fast.",
     red: 19,
     perLane: [3, 5],
     mix: { okada: 2, keke: 2, danfo: 5, car: 3, jeep: 0.6 },
@@ -39,7 +39,7 @@ export const JUNCTIONS: Record<JunctionId, Junction> = {
   lekki: {
     id: "lekki",
     name: "Lekki toll gate",
-    blurb: "Jeeps and tinted glass. Short light, big pay when one rolls down.",
+    blurb: "Jeeps and nice cars. Short red light, big money.",
     red: 14,
     perLane: [3, 4],
     mix: { okada: 0.4, keke: 0, danfo: 0.5, car: 5, jeep: 3 },

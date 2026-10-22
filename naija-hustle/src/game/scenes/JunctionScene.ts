@@ -381,7 +381,7 @@ export class JunctionScene {
   }
   private bonus() { return Math.min(0.5, this.streak * 0.1); }
   private priceFor(v: Veh, push: boolean) {
-    return Math.max(10, Math.round((v.buyer.offer * (push ? 1.3 : 1) * (1 + this.bonus())) / 10) * 10);
+    return Math.max(10, Math.round((v.buyer.offer * (push ? 1.6 : 1) * (1 + this.bonus())) / 10) * 10);
   }
   /** Sell at the offer, or push for more and risk losing the sale. */
   private settle(push: boolean) {
