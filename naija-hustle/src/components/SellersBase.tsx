@@ -44,8 +44,8 @@ export default function SellersBase() {
           <p className="money">You have <strong>{ready ? naira(save.money) : "..."}</strong></p>
         </div>
         <p>
-          Hired sellers work their own corner. They never come to your junction, so you
-          can leave them and play. They stop after {MAX_AWAY_MIN / 60} hours, so come back and collect.
+          Your sellers sell for you while you play. They stop after {MAX_AWAY_MIN / 60} hours,
+          so come back and collect your money.
         </p>
         {err && <p className="why" role="alert">{err}</p>}
         <div className="collect">

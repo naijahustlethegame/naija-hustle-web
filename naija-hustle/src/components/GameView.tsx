@@ -77,8 +77,8 @@ function Controls({ scene, snap }: { scene: JunctionScene; snap: Snapshot }) {
         </p>
         {snap.outOfStock && <p className="why" role="status">Your tray is empty. Leave the road and load more from home.</p>}
         <p className="hint">
-          The light never stops, so sell while it is red. Tap a stopped car to run to it. A hand out, or a bubble
-          above the car, means a chance. Tap the pavement to run back before the light goes green.
+          Sell while the light is red. Tap a car to run to it. A hand out means they may buy.
+          Run back to the pavement before the light turns green!
         </p>
         <div className="btns">
           <button className="btn alt" onClick={() => scene.leave()}>Leave the junction</button>
@@ -100,8 +100,8 @@ function Controls({ scene, snap }: { scene: JunctionScene; snap: Snapshot }) {
             onClick={() => scene.selectJunction(j.id)}>
             <strong>{j.name}</strong>
             <span>{j.blurb}</span>
-            <span className="meta">Red light about {j.red} seconds</span>
-            <span className="meta">Market runs: {naira(feeRange(j.id)[0])} to {naira(feeRange(j.id)[1])} to enter</span>
+            <span className="meta">Red light: {j.red} seconds</span>
+            <span className="meta">Market entry: {naira(feeRange(j.id)[0])} to {naira(feeRange(j.id)[1])}</span>
             <span className="meta mk">{marketsFor(j.id).map((m) => m.name).join(", ")}</span>
           </button>
         ))}
@@ -112,8 +112,8 @@ function Controls({ scene, snap }: { scene: JunctionScene; snap: Snapshot }) {
         <p className="money">On your tray <strong>{snap.carrying}</strong> of {CAPACITY}</p>
       </div>
       <p className="note">
-        Stock comes from the market, so choose what to carry from what you have at home.
-        {athome === 0 && snap.carrying === 0 ? " You have nothing left. Run to the market to fill up." : ""}
+        Pick what to carry from your stock at home.
+        {athome === 0 && snap.carrying === 0 ? " Nothing left! Run to the market to get more." : ""}
       </p>
       <ul className="shop">
         {ITEM_IDS.filter((id) => CORE_ITEMS.includes(id) || snap.storage[id] + snap.stock[id] > 0).map((id) => (

@@ -64,7 +64,7 @@ export function makeBuyer(kind: Kind, weather: RoundEventKind, rng: Rng = Math.r
   const want = weighted(wants, rng);
   const base = ITEMS[want].price * SPEC[kind].mult * (0.85 + rng() * 0.3);
   const offer = Math.max(10, Math.round(base / 10) * 10);
-  const pushP = ({ keen: 0.6, maybe: 0.45, ignore: 0.3 } as Dist<Tell>)[tell] + (kind === "jeep" ? 0.1 : 0);
+  const pushP = ({ keen: 0.75, maybe: 0.5, ignore: 0.3 } as Dist<Tell>)[tell] + (kind === "jeep" ? 0.1 : 0);
   return { tell, willBuy: rng() < buyP, want, offer, pushP };
 }
 
