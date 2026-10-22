@@ -1,3 +1,4 @@
+import { sfx } from "../audio/sfx";
 import { drawAvatar, type AvatarConfig } from "../avatar/avatar";
 import { NO_LINES, PUSH_FAIL_LINES, SPEC, YES_LINES, makeBuyer, pickColor, pickKind } from "../engine/buyers";
 import { OFFICER_SPOTS, drawOfficer, drawWeatherFront, drawWeatherTint } from "../engine/weather";
@@ -111,6 +112,7 @@ export class JunctionScene {
     this.loop = new Loop((dt) => this.update(dt), () => this.draw());
     if (!this.demo) canvas.addEventListener("pointerdown", this.onTap);
     this.snap = this.makeSnap();
+    sfx.configure({ defaultOn: !this.demo, level: this.demo ? 0.5 : 1 }); // the homepage starts quiet and softer
     if (opts.multi) this.initNet();
   }
 
@@ -151,7 +153,7 @@ export class JunctionScene {
     const mine = this.claimV; this.claimV = null;
     if (winner === this.net?.id) this.reallyArrive(mine);
     else { // somebody else was picked. The buyer turns you down.
-      this.say(mine, "I don buy am", "#ffb4ab"); this.target = null;
+      this.say(mine, "I don buy am", "#ffb4ab"); this.target = null; sfx.nope();
       this.streak = 0; this.pstate = "pause"; this.pauseT = 0.6;
     }
   }
@@ -159,13 +161,13 @@ export class JunctionScene {
     if (by === this.net?.id) return;
     const v = this.vehByKey(key); if (!v) return;
     v.done = true; v.tell = "ignore"; v.sold = sold;
-    if (sold) this.pops.push({ x: v.x, y: v.y - v.h / 2 - 16, t: 0, text: `+${naira(price)}`, color: "#ffd84a" });
+    if (sold) { this.pops.push({ x: v.x, y: v.y - v.h / 2 - 16, t: 0, text: `+${naira(price)}`, color: "#ffd84a" }); sfx.cashier(0.22, v.x); }
   }
 
-  start() { this.loop.start(); }
-  pause() { this.loop.stop(); }
-  resume() { this.loop.start(); this.needSync = true; } // the light moved on while we were away
-  destroy() { this.opts.sync?.flush(true); this.net?.close(); this.loop.stop(); this.canvas.removeEventListener("pointerdown", this.onTap); this.listeners.clear(); }
+  start() { this.loop.start(); sfx.ambience(true); }
+  pause() { this.loop.stop(); sfx.ambience(false); sfx.rain(false); }
+  resume() { this.loop.start(); this.needSync = true; sfx.ambience(true); } // the light moved on while we were away
+  destroy() { sfx.ambience(false); sfx.rain(false); this.opts.sync?.flush(true); this.net?.close(); this.loop.stop(); this.canvas.removeEventListener("pointerdown", this.onTap); this.listeners.clear(); }
 
   // ---------- React bridge ----------
   subscribe = (fn: () => void) => { this.listeners.add(fn); return () => { this.listeners.delete(fn); }; };
@@ -235,7 +237,10 @@ export class JunctionScene {
     if (this.needSync || L.cycle !== this.cycle) { this.beginCycle(L.cycle, L.local, L.phase); return; }
     if (L.phase !== this.phase) {
       this.phase = L.phase;
-      if (L.phase === "yellow") this.pops.push({ x: W / 2, y: 190, t: 0, text: "LIGHT DEY CHANGE!", color: "#ffd84a" });
+      if (L.phase === "yellow") {
+        this.pops.push({ x: W / 2, y: 190, t: 0, text: "LIGHT DEY CHANGE!", color: "#ffd84a" });
+        sfx.tick(); setTimeout(() => sfx.tick(), 700); setTimeout(() => sfx.tick(), 1400);
+      }
       if (L.phase === "green") this.goGreen();
     }
     // okada and keke riders jump the light, just before it turns green
@@ -246,6 +251,7 @@ export class JunctionScene {
         if (this.haggle?.v === v || this.target === v || Math.random() > 0.4) continue;
         v.st = "leaving"; v.vx = 40;
         this.pops.push({ x: v.x, y: v.y - v.h / 2 - 12, t: 0, text: "Oya go!", color: "#ffd84a" });
+        sfx.horn(v.kind, v.x, 0.8); sfx.rev(v.kind, v.x);
       }
     }
   }
@@ -268,6 +274,8 @@ export class JunctionScene {
       const hold = Math.min(cycleLength(jn) - redFor(jn, cycle) - 4.5, 3 + this.jamRng() * 4); // always clears with time to spare
       if (hold >= 2) { this.holdLen = hold; if (this.ev.kind !== "goslow") this.ev = { die: this.ev.die, ...GOSLOW }; }
     }
+    sfx.rain(this.ev.kind === "rain");
+    if (this.ev.kind === "lastma" && (this.playing || this.demo)) setTimeout(() => sfx.whistle(), 700);
     this.cur = zero(); this.jumped = false; this.vehs = []; this.pops = [];
     this.haggle = null; this.claimV = null; if (this.pstate === "running" || this.pstate === "haggle" || this.pstate === "wait") this.pstate = "idle"; this.target = null;
     if (phase !== "green") {
@@ -354,8 +362,10 @@ export class JunctionScene {
     }
     if (!this.honked && this.greenT >= this.holdLen - 0.8) {
       this.honked = true; // the only warning that the road is about to clear
+      let hi = 0;
       for (const v of this.vehs.filter((q) => q.st === "stopped").sort((a, b) => b.slotX - a.slotX).slice(0, 3)) {
         this.pops.push({ x: v.x, y: v.y - v.h / 2 - 12, t: 0, text: pickOne(["Peeen!", "Pam pam!", "Oya move!"]), color: "#ffd84a" });
+        sfx.horn(v.kind, v.x, 1, hi++ * 0.14);
       }
     }
     if (this.greenT >= this.holdLen) this.release();
@@ -430,14 +440,14 @@ export class JunctionScene {
     if (!b.willBuy) { this.reject(v, pickOne(NO_LINES)); return; }
     if (this.stock[b.want] <= 0) {
       v.done = true; v.tell = "ignore"; this.net?.settle(v.key, false);
-      this.say(v, `You no get ${ITEMS[b.want].name.toLowerCase()}!`, "#fff");
+      this.say(v, `You no get ${ITEMS[b.want].name.toLowerCase()}!`, "#fff"); sfx.nope();
       this.pstate = "pause"; this.pauseT = 0.35; return;
     }
-    this.haggle = { v, t: 0, dur: HAGGLE_SECS }; this.pstate = "haggle";
+    this.haggle = { v, t: 0, dur: HAGGLE_SECS }; this.pstate = "haggle"; sfx.pickup();
   }
   private reject(v: Veh, line: string) {
     v.done = true; v.tell = "ignore"; this.streak = 0; this.cur.rejects++; this.net?.settle(v.key, false);
-    this.say(v, line, "#ffb4ab");
+    this.say(v, line, "#ffb4ab"); sfx.nope();
     this.pstate = "pause"; this.pauseT = 0.45; this.haggle = null; this.target = null;
   }
   private bonus() { return Math.min(0.5, this.streak * 0.1); }
@@ -456,6 +466,7 @@ export class JunctionScene {
     this.streak++; this.cur.sales++; this.cur.earned += price; this.cur.bestStreak = Math.max(this.cur.bestStreak, this.streak);
     this.pops.push({ x: v.x, y: v.y - v.h / 2 - 16, t: 0, text: `+${naira(price)}`, color: "#7dffa8" });
     this.say(v, pickOne(YES_LINES), "#fff", 22);
+    sfx.cashier(1, v.x); // ka-ching
     this.pstate = "idle";
     if (countStock(this.stock) === 0) this.pops.push({ x: this.px, y: this.py - 90, t: 0, text: "Tray empty!", color: "#ffd84a" });
     this.notify();
@@ -485,7 +496,7 @@ export class JunctionScene {
     if (this.ev?.kind === "goslow" && (this.phase !== "green" || this.holding) && (this.honkT -= dt) <= 0) {
       this.honkT = 0.7 + Math.random() * 1.1; // a go-slow means horns
       const stopped = this.vehs.filter((v) => v.st === "stopped");
-      if (stopped.length) { const v = pickOne(stopped); this.pops.push({ x: v.x, y: v.y - v.h / 2 - 12, t: 0, text: pickOne(["Pam pam!", "Peeen!", "Oya move!"]), color: "#ffd84a" }); }
+      if (stopped.length) { const v = pickOne(stopped); this.pops.push({ x: v.x, y: v.y - v.h / 2 - 12, t: 0, text: pickOne(["Pam pam!", "Peeen!", "Oya move!"]), color: "#ffd84a" }); sfx.horn(v.kind, v.x, 0.9); }
     }
     for (const p of this.pops) p.t += dt;
     this.pops = this.pops.filter((p) => p.t < 1.1);
@@ -517,7 +528,8 @@ export class JunctionScene {
         if (this.amber && Math.random() > 0.6) { this.ambT[i] = rand(0.3, 0.7); return; } // only some try to beat the amber
         const kind = pickKind(j.mix), s = SPEC[kind];
         this.ambient.push({ id: this.nextId++, kind, lane: i, x: -s.w, y: ly + 20 - s.h / 2 - 2, w: s.w, h: s.h, tint: pickColor(kind), tell: "ignore", sold: false, vx: this.amber ? rand(360, 440) : rand(230, 300) });
-        if (this.amber && Math.random() < 0.3) this.pops.push({ x: 110, y: ly - 10, t: 0, text: pickOne(["Oya go!", "Beat am!", "Peeen!"]), color: "#ffd84a" });
+        if (this.amber && Math.random() < 0.3) { this.pops.push({ x: 110, y: ly - 10, t: 0, text: pickOne(["Oya go!", "Beat am!", "Peeen!"]), color: "#ffd84a" }); sfx.horn(kind, 110, 0.8); }
+        if (kind === "okada") sfx.pass("okada"); else if (Math.random() < 0.3) sfx.pass(kind, 0.8);
         this.ambT[i] = this.amber ? rand(0.35, 0.8) : rand(0.9, 2.2) / j.flow;
       });
     }
@@ -543,7 +555,7 @@ export class JunctionScene {
         v.x = nx;
       } else if (this.phase === "green" && !this.holding && v.st === "stopped") {
         v.launchIn -= dt;
-        if (v.launchIn <= 0) { v.st = "leaving"; v.vx = 30; }
+        if (v.launchIn <= 0) { v.st = "leaving"; v.vx = 30; if (v.kind !== "car" || Math.random() < 0.5) sfx.rev(v.kind, v.x); }
       } else if (v.st === "leaving") {
         v.vx = Math.min(430, v.vx + 360 * dt);
         v.x += v.vx * dt;
@@ -591,7 +603,7 @@ export class JunctionScene {
   private hit() {
     const loss = Math.min(this.money, 50); this.money -= loss; this.opts.sync?.hit();
     const lost = this.loseRandomItem();
-    this.cur.hits++; this.cur.earned -= loss; this.streak = 0;
+    this.cur.hits++; this.cur.earned -= loss; this.streak = 0; sfx.hit(this.px);
     this.pops.push({ x: this.px, y: this.py - 80, t: 0, text: `Ouch! -${naira(loss)}${lost ? ` and ${ITEMS[lost].name.toLowerCase()}` : ""}`, color: "#ff8a80" });
     this.pstate = "pause"; this.pauseT = 1; this.lockT = 1; this.inv = 1.6; this.haggle = null; this.target = null; this.py = HOME_Y;
     this.notify();

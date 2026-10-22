@@ -1,3 +1,4 @@
+import { sfx } from "../audio/sfx";
 import { drawAvatar, type AvatarConfig } from "../avatar/avatar";
 import { CAPACITY, ITEMS, countStock, emptyStock } from "../engine/items";
 import type { Market } from "../engine/markets";
@@ -53,7 +54,7 @@ const BADGE: Record<ItemId, string> = {
 };
 
 type OKind = "lastma" | "danfo" | "okada" | "pothole" | "crate" | "item" | "cash";
-type Obj = { kind: OKind; lane: number; z: number; used: boolean; item?: ItemId; cash?: number; seed: number };
+type Obj = { kind: OKind; lane: number; z: number; used: boolean; item?: ItemId; cash?: number; seed: number; heard?: boolean };
 type Pop = { x: number; y: number; t: number; text: string; color: string; size: number };
 export type RunPhase = "idle" | "countdown" | "run" | "caught" | "finished";
 export type RunResult = {
@@ -84,7 +85,7 @@ export class RunnerScene {
   private t = 0; private cd = 0; private endT = 0; private ended = false;
   private dist = 0; private speed = 0; private slowT = 0; private chase = 0; private shake = 0; private flash = 0;
   private lane = 0; private target = 0;
-  private jumpH = 0; private vy = 0;
+  private jumpH = 0; private vy = 0; private lastN = 4;
   private stumbles = 0;
   private objs: Obj[] = []; private pops: Pop[] = [];
   private nextZ = 45; private free = 0; private rng: () => number = Math.random;
@@ -108,13 +109,14 @@ export class RunnerScene {
     window.addEventListener("keydown", this.onKey);
     canvas.addEventListener("pointerdown", this.onDown);
     canvas.addEventListener("pointerup", this.onUp);
+    sfx.configure({ defaultOn: true, level: 1 });
   }
 
-  start() { this.loop.start(); }
-  pause() { this.loop.stop(); }
-  resume() { this.loop.start(); }
+  start() { this.loop.start(); sfx.ambience(true); }
+  pause() { this.loop.stop(); sfx.ambience(false); }
+  resume() { this.loop.start(); sfx.ambience(true); }
   destroy() {
-    this.loop.stop();
+    this.loop.stop(); sfx.ambience(false);
     window.removeEventListener("keydown", this.onKey);
     this.canvas.removeEventListener("pointerdown", this.onDown);
     this.canvas.removeEventListener("pointerup", this.onUp);
@@ -135,13 +137,13 @@ export class RunnerScene {
     this.lane = 0; this.target = 0; this.jumpH = 0; this.vy = 0; this.stumbles = 0;
     this.objs = []; this.pops = []; this.nextZ = COUNTDOWN * 4 * PRE_SPEED + 45; this.free = 0; // first row is 45 units ahead when RUN! appears
     this.items = emptyStock(); this.dropped = 0; this.cash = 0; this.ended = false; this.endT = 0;
-    this.phase = "countdown"; this.cd = 0;
+    this.phase = "countdown"; this.cd = 0; this.lastN = 4;
   }
 
   // ---------- input ----------
   get active() { return this.phase === "countdown" || this.phase === "run"; }
   moveLane(d: number) { if (this.active) this.target = clamp(this.target + d, -1, 1); }
-  jump() { if (this.phase === "run" && this.jumpH === 0 && this.vy === 0) this.vy = JUMP_V; }
+  jump() { if (this.phase === "run" && this.jumpH === 0 && this.vy === 0) { this.vy = JUMP_V; sfx.jump(); } }
 
   private key(e: KeyboardEvent) {
     if (!this.active) return;
@@ -218,6 +220,8 @@ export class RunnerScene {
     if (this.phase === "idle") { this.dist += 9 * dt; return; }
     if (this.phase === "countdown") {
       this.dist += PRE_SPEED * speedK(this.level) * dt; this.cd += dt;
+      const n = 3 - Math.floor(this.cd / COUNTDOWN);
+      if (n !== this.lastN && n >= 0) { this.lastN = n; if (n > 0) sfx.tick(); else sfx.go(); }
       while (this.nextZ < this.dist + FAR) this.spawnRow();
       if (this.cd >= COUNTDOWN * 4) { this.phase = "run"; this.pops.push({ x: W / 2, y: 190, t: 0, text: "RUN!", color: "#7dffa8", size: 54 }); }
       return;
@@ -249,19 +253,23 @@ export class RunnerScene {
     for (const o of this.objs) {
       if (o.used) continue;
       const rel = o.z - this.dist;
+      if (!o.heard && rel > 0 && rel < 26 && (o.kind === "okada" || o.kind === "danfo" || o.kind === "lastma")) {
+        o.heard = true; const sx = 480 + o.lane * 230;
+        if (o.kind === "okada") sfx.pass("okada", 0.9); else if (o.kind === "danfo") sfx.horn("danfo", sx, 1); else sfx.whistle(sx, 0.6);
+      }
       if (rel > 1.2 || rel < -0.9 || Math.abs(o.lane - this.lane) > 0.55) continue;
       if (o.kind === "item" || o.kind === "cash") this.collect(o);
       else if (o.kind === "pothole" || o.kind === "crate") {
         o.used = true;
         if (this.jumpH > CLEAR_H) { this.pop(o.lane, "Clean!", "#bfffd6", 26); continue; }
         this.stumbles++; this.slowT = SLOW_SECS; this.chase = 1; this.shake = 0.35; this.flash = 0.18;
-        this.pop(o.lane, "Stumble!", "#ffb4ab", 30);
+        this.pop(o.lane, "Stumble!", "#ffb4ab", 30); sfx.thud();
         if (this.stumbles >= 2) { this.caught(); return; }
       } else { o.used = true; this.caught(); return; }
     }
     this.objs = this.objs.filter((o) => o.z - this.dist > -4);
     if (this.dist >= RUN_DIST) {
-      this.phase = "finished"; this.endT = 0;
+      this.phase = "finished"; this.endT = 0; sfx.fanfare();
       this.pops.push({ x: W / 2, y: 190, t: 0, text: this.market.name.toUpperCase() + "!", color: "#ffd84a", size: 44 });
     }
   }
@@ -274,17 +282,17 @@ export class RunnerScene {
     o.used = true;
     if (o.kind === "cash") {
       const v = (o.cash ?? 0) * this.level;
-      this.cash += v; this.pop(o.lane, `+₦${v}`, "#7dffa8", 28);
+      this.cash += v; this.pop(o.lane, `+₦${v}`, "#7dffa8", 28); sfx.coin();
     } else if (o.item) {
       const room = Math.max(0, this.space - countStock(this.items)), n = Math.min(this.level, room);
       this.dropped += this.level - n;
-      if (n === 0) this.pop(o.lane, "No room!", "#ffd0a0", 24);
-      else { this.items[o.item] += n; this.pop(o.lane, `+${n > 1 ? n : ""}${ITEMS[o.item].icon}`, "#ffffff", 32); }
+      if (n === 0) { this.pop(o.lane, "No room!", "#ffd0a0", 24); sfx.nope(); }
+      else { sfx.pickup(); this.items[o.item] += n; this.pop(o.lane, `+${n > 1 ? n : ""}${ITEMS[o.item].icon}`, "#ffffff", 32); }
     }
   }
 
   private caught() {
-    this.phase = "caught"; this.endT = 0; this.shake = 0.6; this.flash = 0.35;
+    this.phase = "caught"; this.endT = 0; this.shake = 0.6; this.flash = 0.35; sfx.caught();
     this.pops.push({ x: W / 2, y: 190, t: 0, text: "LASTMA CAUGHT YOU!", color: "#ff8a80", size: 48 });
   }
 

@@ -8,6 +8,7 @@ import { JUNCTIONS, type JunctionId } from "@/game/engine/junctions";
 import { feeRange, fineFor, marketById, marketsFor, rollMarket, type Market } from "@/game/engine/markets";
 import type { ItemId, Stock } from "@/game/engine/types";
 import { LEVEL_NAME, MAX_LEVEL, type RunResult, type RunnerScene } from "@/game/scenes/RunnerScene";
+import SoundToggle from "./SoundToggle";
 
 type Summary = {
   market: Market; outcome: "finished" | "caught"; level: number; gained: Stock; cash: number; dropped: number;
@@ -165,6 +166,7 @@ export default function RunnerView() {
       <div className="frame runner">
         <canvas ref={ref} aria-label="Market run: dodge LASTMA and grab stock" />
       </div>
+      <SoundToggle />
 
       {ui === "running" && (
         <>

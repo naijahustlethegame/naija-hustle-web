@@ -9,6 +9,7 @@ import { CAPACITY, CORE_ITEMS, ITEMS, ITEM_IDS, countStock, naira } from "@/game
 import { JUNCTION_LIST } from "@/game/engine/junctions";
 import { feeRange, marketsFor } from "@/game/engine/markets";
 import type { JunctionScene, Snapshot } from "@/game/scenes/JunctionScene";
+import SoundToggle from "./SoundToggle";
 
 /**
  * The street. With `demo` a bot plays it on the homepage. Otherwise the light cycles by itself:
@@ -52,6 +53,7 @@ export default function GameView({ demo = false }: { demo?: boolean }) {
       <div className="frame">
         <canvas ref={ref} aria-label={demo ? "Live gameplay: a hawker working a red light" : "Naija Hustle street"} />
       </div>
+      <SoundToggle />
       {failed && <p className="why" role="alert">Could not reach the server. Refresh to try again.</p>}
       {!demo && <p className="rotate-hint">Turn your phone sideways for a bigger street.</p>}
       {!demo && scene && snap && <Controls scene={scene} snap={snap} />}
