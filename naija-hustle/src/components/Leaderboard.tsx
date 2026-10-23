@@ -56,7 +56,7 @@ export default function Leaderboard() {
     <section className="board" aria-label="Leaderboard">
       <header className="board-head">
         <h1>Leaderboard</h1>
-        <p>The richest hustlers in Lagos. Only money in hand counts.</p>
+        <p>The richest hustlers in the game.</p>
       </header>
 
       {err && <p className="why" role="alert">{err}</p>}

@@ -21,7 +21,7 @@ export default function Home() {
           </div>
           <figure className="hero-demo">
             <GameView demo />
-            <figcaption>Live from the junction. Your turn next!</figcaption>
+            <figcaption>No food for a lazy man. Do you have what it take?</figcaption>
           </figure>
         </section>
 
