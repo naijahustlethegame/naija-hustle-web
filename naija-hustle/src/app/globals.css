@@ -264,12 +264,26 @@ h3 { font-size: 1.5rem; }
 /* Sellers and Invite (second dock row). Append to the end of your stylesheet.
    Desktop already works: .dock-btn.mini spans 2 of the 4 columns, so the two buttons are equal halves under the main row.
    On a phone each half is only ~150px wide, so the label stacks above the small text instead of sitting beside it. */
+/* Append to the end of your stylesheet. */
 
 /* The dock no longer floats over the street: it sits in the page under it, and the player scrolls down to it. */
 .dock { position: relative; bottom: auto; z-index: auto; }
 
 /* The Location, Tray and Invite menus open in the page, just above the dock buttons, instead of floating over the street. */
 .sheet { position: static; left: auto; right: auto; bottom: auto; max-height: none; overflow: visible; margin-bottom: 10px; }
+
+/* Phone, portrait: the menus become a bottom sheet. It is never taller than about two thirds of the screen,
+   it scrolls inside itself, and its header and buttons stay put, so the street stays visible above it. */
+@media (max-width: 700px) {
+  .sheet {
+    position: fixed; left: 0; right: 0; bottom: 0; top: auto; z-index: 60; margin: 0; padding: 0 14px 14px;
+    max-height: 64vh; max-height: 64dvh; overflow-y: auto; overscroll-behavior: contain;
+    border-width: 3px 0 0; border-radius: 20px 20px 0 0; box-shadow: 0 -10px 0 rgba(27, 27, 34, 0.18);
+  }
+  .sheet-head { position: sticky; top: 0; z-index: 2; margin: 0 -14px 10px; padding: 14px 14px 8px; background: var(--paper); }
+  .sheet-foot { position: sticky; bottom: 0; z-index: 2; margin: 14px -14px 0; padding: 10px 14px calc(10px + env(safe-area-inset-bottom)); background: var(--paper); border-top: 3px solid var(--tar); }
+  .invite-sheet { max-width: none; margin-left: 0; }
+}
 
 /* Sellers and Invite (second dock row). Desktop already works: .dock-btn.mini spans 2 of the 4 columns,
    so the two buttons are equal halves under the main row.
