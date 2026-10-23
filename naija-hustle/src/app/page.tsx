@@ -12,8 +12,7 @@ export default function Home() {
           <div className="hero-copy">
             <h1>Survive the Naija Hustle.</h1>
             <p>
-              Sell snaks and gadgets, open a stand to sell, survice the hustle. Pick who will
-              buy, make the sale, and get off the road before the light turns green.
+              Sell snaks and gadgets, open a stand to sell, survice the hustle. Compete with other hustlers, make the sale, show what you're made of.
             </p>
             <div className="btns">
               <Link className="btn" href="/play">Play now</Link>
@@ -27,7 +26,7 @@ export default function Home() {
         </section>
 
         <div className="band" aria-hidden>
-          {["No condition is permanent", "God dey", "Hustle no dey sleep", "Wait for red"].map((s) => (
+          {["No condition is permanent", "God dey", "Hustle no dey sleep", "Small small"].map((s) => (
             <span key={s}>{s}<i className="dots"><b /><b /><b /></i></span>
           ))}
         </div>
@@ -38,17 +37,17 @@ export default function Home() {
             <li className="red">
               <span className="n">1</span>
               <h3>Red light: cars stop</h3>
-              <p>When the light is red, the cars stop and wait. Tap a car to run to it.</p>
+              <p>When the light is red, the cars stop and wait. Tap a car to run to it and sell.</p>
             </li>
             <li className="amber">
               <span className="n">2</span>
               <h3>Sell to the driver</h3>
-              <p>If the driver puts a hand out of the window, they want to buy. Tap to sell. If the window is shut, they will not buy.</p>
+              <p>Sell at the normal price or push to sell for a higher prie but be fast. Someone might get to the buyer before you.</p>
             </li>
             <li className="green">
               <span className="n">3</span>
               <h3>Run away before green</h3>
-              <p>When the light turns yellow, run to the side of the road. When it is green the cars go. If a car hits you, you lose money.</p>
+              <p>Run to the side of the road before the light turns green. If a car hits you, you lose money.</p>
             </li>
           </ol>
         </section>
@@ -56,8 +55,7 @@ export default function Home() {
         <section className="sec">
           <h2>Not everybody buys</h2>
           <p>
-            A hand out helps, but nobody is sure to buy. Rain means fewer buyers.
-            Hot sun makes everyone want cold water.
+            Nobody is sure to buy but most buyers have patterns. If you pay attention, you can learn them.
           </p>
         </section>
 
