@@ -173,7 +173,7 @@ function Controls({ scene, snap, unlocks, beforeBuy, onBought }: { scene: Juncti
               <li key={id} className={"tray-card" + (snap.stock[id] > 0 ? " has" : "")}>
                 <span className="big" aria-hidden>{ITEMS[id].icon}</span>
                 <strong>{ITEMS[id].name}</strong>
-                <small>Home: {snap.storage[id]} · sells ~{naira(ITEMS[id].price)}</small>
+                <small>You have: {snap.storage[id]} · sells ~{naira(ITEMS[id].price)}</small>
                 <span className="qty">
                   <button className="step-btn" onClick={() => scene.unload(id)} disabled={snap.stock[id] === 0} aria-label={`Take ${ITEMS[id].name} off the tray`}>-</button>
                   <output aria-label={`${ITEMS[id].name} on tray`}>{snap.stock[id]}</output>
