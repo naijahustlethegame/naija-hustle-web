@@ -17,20 +17,29 @@ function disc(c: Ctx, x: number, y: number, r: number, fill: string) {
 }
 
 // ---------------------------------------------------------------- billboards
-/** A roadside board: steel legs, lit from above, blank face. Each junction gets three. */
+/** Fill the face with an ad, cropping to cover it so a wrong-shaped image is cut, never stretched. */
+function drawCover(c: Ctx, img: CanvasImageSource, x: number, y: number, w: number, h: number) {
+  const a = img as { naturalWidth?: number; naturalHeight?: number; width?: number; height?: number };
+  const iw = a.naturalWidth || a.width || w, ih = a.naturalHeight || a.height || h;
+  const k = Math.max(w / iw, h / ih), sw = w / k, sh = h / k;
+  c.drawImage(img, (iw - sw) / 2, (ih - sh) / 2, sw, sh, x, y, w, h);
+}
+
+/** A roadside board: short steel legs, lit from above, blank face. Each junction gets two. */
 function drawBillboard(c: Ctx, s: (typeof AD_SLOTS)[number], img?: CanvasImageSource) {
   const { x, y, w, h } = s;
   // legs and cross brace
-  c.fillStyle = "rgba(0,0,0,.18)"; c.beginPath(); c.ellipse(x + w / 2, y + h + 12, w * 0.42, 3.5, 0, 0, Math.PI * 2); c.fill();
-  c.fillStyle = "#4a4d55"; c.fillRect(x + 34, y + h, 9, 12); c.fillRect(x + w - 43, y + h, 9, 12);
-  c.fillStyle = "#33353b"; c.fillRect(x + 31, y + h + 10, 15, 3); c.fillRect(x + w - 46, y + h + 10, 15, 3);
+  c.fillStyle = "rgba(0,0,0,.18)"; c.beginPath(); c.ellipse(x + w / 2, y + h + 7, w * 0.42, 3, 0, 0, Math.PI * 2); c.fill();
+  const lg = Math.round(w * 0.13); // legs sit about an eighth of the way in, whatever the board width
+  c.fillStyle = "#4a4d55"; c.fillRect(x + lg, y + h, 9, 6); c.fillRect(x + w - lg - 9, y + h, 9, 6);
+  c.fillStyle = "#33353b"; c.fillRect(x + lg - 3, y + h + 4, 15, 3); c.fillRect(x + w - lg - 12, y + h + 4, 15, 3);
   // frame
   rr(c, x - 6, y - 6, w + 12, h + 12, 4, "#2b2d33");
   rr(c, x - 3, y - 3, w + 6, h + 6, 3, "#6d7079");
   // face
   if (img) {
     c.save(); c.beginPath(); c.roundRect(x, y, w, h, 2); c.clip();
-    c.drawImage(img, x, y, w, h); c.restore();
+    drawCover(c, img, x, y, w, h); c.restore();
   } else {
     const g = c.createLinearGradient(x, y, x, y + h); g.addColorStop(0, "#fbfaf4"); g.addColorStop(1, "#e9e6da");
     c.fillStyle = g; c.fillRect(x, y, w, h);
@@ -38,16 +47,16 @@ function drawBillboard(c: Ctx, s: (typeof AD_SLOTS)[number], img?: CanvasImageSo
     c.beginPath(); c.moveTo(x + 16, y + h); c.lineTo(x + 70, y); c.lineTo(x + 96, y); c.lineTo(x + 42, y + h); c.fill();
     c.strokeStyle = "rgba(0,0,0,.07)"; c.lineWidth = 1; // seams where the sheets meet
     for (let i = 1; i < 4; i++) { c.beginPath(); c.moveTo(x + (w / 4) * i, y); c.lineTo(x + (w / 4) * i, y + h); c.stroke(); }
-    c.fillStyle = "#bdb8a8"; c.font = `13px ${DISPLAY_FONT}`; c.textAlign = "center";
-    c.fillText("AD SPACE", x + w / 2, y + h / 2 + 4);
+    c.fillStyle = "#bdb8a8"; c.font = `22px ${DISPLAY_FONT}`; c.textAlign = "center";
+    c.fillText("AD SPACE", x + w / 2, y + h / 2 + 7);
   }
   // catwalk and lamps on top
   c.fillStyle = "#2b2d33"; c.fillRect(x - 6, y - 12, w + 12, 3);
   for (const lx of [x + w * 0.2, x + w * 0.5, x + w * 0.8]) {
     c.fillRect(lx - 1, y - 12, 2, 6);
     rr(c, lx - 6, y - 17, 12, 5, 2, "#2b2d33");
-    c.fillStyle = "rgba(255,244,190,.16)";
-    c.beginPath(); c.moveTo(lx - 5, y - 12); c.lineTo(lx + 5, y - 12); c.lineTo(lx + 22, y + 30); c.lineTo(lx - 22, y + 30); c.fill();
+    c.fillStyle = "rgba(255,244,190,.12)"; // a short glow only: a long one washes out the top of the ad
+    c.beginPath(); c.moveTo(lx - 5, y - 12); c.lineTo(lx + 5, y - 12); c.lineTo(lx + 14, y + 12); c.lineTo(lx - 14, y + 12); c.fill();
     disc(c, lx, y - 12, 2.2, "#fff2b0");
   }
 }
