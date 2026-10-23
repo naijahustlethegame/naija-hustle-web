@@ -5,17 +5,14 @@ import { loadAvatar } from "@/lib/storage";
 import { api, loadPlayer } from "@/lib/api";
 import { Sync } from "@/lib/sync";
 import { JUNCTION_ITEMS, hasItem, hasJunction, junctionForItem, starterUnlocks, type Unlocks } from "@/game/engine/progression";
-import type { HiredSeller, SaveData } from "@/lib/storage";
-import { pendingTotal } from "@/game/sellers";
+import type { SaveData } from "@/lib/storage";
 import LockedJunction from "./LockedJunction";
-import InviteSheet from "./InviteSheet";
 
 import { CAPACITY, CORE_ITEMS, ITEMS, ITEM_IDS, countStock, naira } from "@/game/engine/items";
 import { JUNCTIONS, JUNCTION_LIST, type Junction } from "@/game/engine/junctions";
 import { feeRange, marketsFor } from "@/game/engine/markets";
 import type { JunctionScene, Snapshot } from "@/game/scenes/JunctionScene";
 import SoundToggle from "./SoundToggle";
-import "./game-dock.css";
 
 /**
  * The street. With `demo` a bot plays it on the homepage. Otherwise the light cycles by itself:
@@ -27,7 +24,6 @@ export default function GameView({ demo = false }: { demo?: boolean }) {
   const [snap, setSnap] = useState<Snapshot | null>(null);
   const [failed, setFailed] = useState(false);
   const [unlocks, setUnlocks] = useState<Unlocks>(starterUnlocks);
-  const [sellers, setSellers] = useState<HiredSeller[]>([]);
   const syncRef = useRef<Sync | null>(null);
 
   useEffect(() => {
@@ -42,7 +38,7 @@ export default function GameView({ demo = false }: { demo?: boolean }) {
       // The server owns money and stock. The scene queues changes here and they are sent in batches.
       const sync = demo ? undefined : new Sync(async () => { s.applyServer(await loadPlayer()); });
       syncRef.current = sync ?? null;
-      if (save) { setUnlocks(save.unlocks); setSellers(save.sellers); }
+      if (save) setUnlocks(save.unlocks);
       s = new JunctionScene(canvas, {
         demo, multi: true, avatar: loadAvatar(), money: save?.money, stock: save?.stock, storage: save?.storage, junction: save?.junction,
         sync, onJunction: demo ? undefined : (j) => { api.setJunction(j).catch(() => {}); },
@@ -59,7 +55,7 @@ export default function GameView({ demo = false }: { demo?: boolean }) {
     return () => { dead = true; stop(); };
   }, [demo]);
 
-  const body = (
+  return (
     <>
       <div className="frame">
         <canvas ref={ref} aria-label={demo ? "Live gameplay: a hawker working a red light" : "Naija Hustle street"} />
@@ -67,20 +63,17 @@ export default function GameView({ demo = false }: { demo?: boolean }) {
       <SoundToggle />
       {failed && <p className="why" role="alert">Could not reach the server. Refresh to try again.</p>}
       {!demo && <p className="rotate-hint">Turn your phone sideways for a bigger street.</p>}
-      {!demo && scene && snap && <Controls scene={scene} snap={snap} unlocks={unlocks} sellers={sellers}
+      {!demo && scene && snap && <Controls scene={scene} snap={snap} unlocks={unlocks}
         beforeBuy={async () => { await syncRef.current?.flush(); }}
-        onBought={(s: SaveData) => { setUnlocks(s.unlocks); setSellers(s.sellers); scene.applyServer(s); }} />}
+        onBought={(s: SaveData) => { setUnlocks(s.unlocks); scene.applyServer(s); }} />}
     </>
   );
-  // The homepage demo keeps its own layout. The real game gets .game, which the mobile layout in game-dock.css hangs on.
-  return demo ? body : <div className="game">{body}</div>;
 }
 
-function Controls({ scene, snap, unlocks, sellers, beforeBuy, onBought }: { scene: JunctionScene; snap: Snapshot; unlocks: Unlocks; sellers: HiredSeller[]; beforeBuy: () => Promise<void>; onBought: (s: SaveData) => void }) {
+function Controls({ scene, snap, unlocks, beforeBuy, onBought }: { scene: JunctionScene; snap: Snapshot; unlocks: Unlocks; beforeBuy: () => Promise<void>; onBought: (s: SaveData) => void }) {
   const [notice, setNotice] = useState("");
-  const [open, setOpen] = useState<null | "loc" | "tray" | "invite">(null);
+  const [open, setOpen] = useState<null | "loc" | "tray">(null);
   const [locOk, setLocOk] = useState(false); // has the player chosen a junction this visit?
-  const [now, setNow] = useState(() => Date.now());
   const dock = useRef<HTMLDivElement>(null);
 
   // Sheets close on Escape, on a tap anywhere outside the dock, and once you walk onto the road.
@@ -92,17 +85,16 @@ function Controls({ scene, snap, unlocks, sellers, beforeBuy, onBought }: { scen
     return () => { document.removeEventListener("pointerdown", away); document.removeEventListener("keydown", esc); };
   }, [open]);
   useEffect(() => { if (snap.playing) setOpen(null); }, [snap.playing]);
-  useEffect(() => { const t = setInterval(() => setNow(Date.now()), 10000); return () => clearInterval(t); }, []);
 
-  // ---------- on the road: cash, tray, and the way out ----------
+  // ---------- on the road: money, live tray, and the way out ----------
   if (snap.playing) {
     const shown = ITEM_IDS.filter((id) => CORE_ITEMS.includes(id) || snap.stock[id] > 0);
     return (
       <div className="dock" ref={dock} role="region" aria-label="On the road">
         <div className="dock-row road">
-          <div className="dock-stat"><small>Cash</small><strong>{naira(snap.money)}</strong></div>
-          <div className={"dock-stat" + (snap.outOfStock ? " empty" : "")} aria-live="polite"><small>On tray</small><strong>{snap.carrying}</strong></div>
-          <ul className="dock-tray" aria-label="On your tray">
+          <p className="dock-money"><small>Cash</small>{naira(snap.money)}</p>
+          <ul className={"dock-tray" + (snap.outOfStock ? " empty" : "")} aria-live="polite" aria-label="On your tray">
+            <li className="total"><strong>{snap.carrying}</strong><small>on tray</small></li>
             {shown.map((id) => (
               <li key={id} className={snap.stock[id] === 0 ? "gone" : ""}>
                 <span aria-hidden>{ITEMS[id].icon}</span> {snap.stock[id]}<span className="sr"> {ITEMS[id].name}</span>
@@ -120,8 +112,7 @@ function Controls({ scene, snap, unlocks, sellers, beforeBuy, onBought }: { scen
   const athome = countStock(snap.storage);
   const next = !locOk ? 1 : snap.carrying === 0 ? 2 : 3;
   const ready = locOk && snap.carrying > 0;
-  const waiting = pendingTotal(sellers, now);
-  const toggle = (w: "loc" | "tray" | "invite") => setOpen((o) => (o === w ? null : w));
+  const toggle = (w: "loc" | "tray") => setOpen((o) => (o === w ? null : w));
 
   // Spread the tray across items one at a time so it is a mixed load, not 14 sachets of water.
   const fill = () => {
@@ -182,7 +173,7 @@ function Controls({ scene, snap, unlocks, sellers, beforeBuy, onBought }: { scen
               <li key={id} className={"tray-card" + (snap.stock[id] > 0 ? " has" : "")}>
                 <span className="big" aria-hidden>{ITEMS[id].icon}</span>
                 <strong>{ITEMS[id].name}</strong>
-                <small>You have: {snap.storage[id]} · sells ~{naira(ITEMS[id].price)}</small>
+                <small>Home: {snap.storage[id]} · sells ~{naira(ITEMS[id].price)}</small>
                 <span className="qty">
                   <button className="step-btn" onClick={() => scene.unload(id)} disabled={snap.stock[id] === 0} aria-label={`Take ${ITEMS[id].name} off the tray`}>-</button>
                   <output aria-label={`${ITEMS[id].name} on tray`}>{snap.stock[id]}</output>
@@ -199,43 +190,26 @@ function Controls({ scene, snap, unlocks, sellers, beforeBuy, onBought }: { scen
         </div>
       )}
 
-      {open === "invite" && <InviteSheet onClose={() => setOpen(null)} />}
-
       <div className="dock-row">
-        <div className="dock-cash">
-          <span><small>Cash</small><strong>{naira(snap.money)}</strong></span>
-          <p className="dock-step" aria-live="polite">{next === 1 ? "Step 1: choose where to sell" : next === 2 ? "Step 2: load your tray" : "Ready! Press Play"}</p>
-        </div>
-
-        <button className={"dock-btn dock-where" + (locOk ? " done" : "") + (next === 1 ? " blink" : "")} onClick={() => toggle("loc")} aria-expanded={open === "loc"}>
+        <button className={"dock-btn" + (locOk ? " done" : "") + (next === 1 ? " blink" : "")} onClick={() => toggle("loc")} aria-expanded={open === "loc"}>
           <small><span className="step">{locOk ? "✓" : "1"}</span> Location</small>
           <strong>{locOk ? `📍 ${JUNCTIONS[snap.junction].name}` : "Choose where"}</strong>
         </button>
 
-        <button className={"dock-btn dock-load" + (snap.carrying > 0 ? " done" : "") + (next === 2 ? " blink" : "")} onClick={() => toggle("tray")} aria-expanded={open === "tray"}>
+        <button className={"dock-btn" + (snap.carrying > 0 ? " done" : "") + (next === 2 ? " blink" : "")} onClick={() => toggle("tray")} aria-expanded={open === "tray"}>
           <small><span className="step">{snap.carrying > 0 ? "✓" : "2"}</span> Tray</small>
           <strong>{snap.carrying === 0 ? "🧺 Empty: fill it" : `🧺 ${snap.carrying}/${CAPACITY} loaded`}</strong>
           <span className="meter" aria-hidden><i style={{ width: `${(snap.carrying / CAPACITY) * 100}%` }} /></span>
         </button>
 
-        <Link className={"dock-btn mini dock-market" + (athome === 0 && snap.carrying === 0 ? " blink" : "")} href="/restock">
-          <span>🛒 Market</span>
+        <Link className={"dock-btn" + (athome === 0 && snap.carrying === 0 ? " blink" : "")} href="/restock">
           <small>Stock up</small>
+          <strong>🛒 Run to market</strong>
         </Link>
 
         <button className={"dock-btn dock-play" + (next === 3 ? " ready" : "")} onClick={() => scene.play()} disabled={!ready}>
           <small>{ready ? "3 · Go" : !locOk ? "Pick a location first" : "Load your tray first"}</small>
           <strong>▶ Play</strong>
-        </button>
-
-        <Link className={"dock-btn mini dock-sellers" + (waiting > 0 ? " cash" : "")} href="/sellers">
-          <span>👥 Sellers</span>
-          <small>{sellers.length === 0 ? "Hire your first" : waiting > 0 ? `${naira(waiting)} waiting` : `${sellers.length} hired`}</small>
-        </Link>
-
-        <button className="dock-btn mini dock-invite" onClick={() => toggle("invite")} aria-expanded={open === "invite"}>
-          <span>🎁 Invite</span>
-          <small>Earn cash</small>
         </button>
       </div>
     </div>
