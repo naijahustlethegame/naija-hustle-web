@@ -12,7 +12,7 @@ export default function Home() {
           <div className="hero-copy">
             <h1>Survive the Naija Hustle.</h1>
             <p>
-              Sell snacks and gadgets, open a stand, survice the hustle. Compete with other hustlers, make the sale, show what you're made of.
+              Sell snacks and gadgets, open a stand, survive the hustle. Compete with other hustlers, make the sale, show what you're made of.
             </p>
             <div className="btns">
               <Link className="btn" href="/play">Play now</Link>
