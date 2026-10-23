@@ -2,6 +2,7 @@ import type { JunctionId } from "./junctions";
 import type { ItemId } from "./types";
 
 /**
+ * The starting junction's markets sit on untarred dirt roads; the richer ones are tarred.
  * Every junction has its own three markets. A run goes to one of them at random, so you
  * never know which until you are standing at the start. Better markets stock dearer goods
  * and drop bigger cash, and they charge more to get in.
@@ -12,6 +13,7 @@ export type Look = {
   skylineColors: string[]; lit: string;
   ground: [string, string];            // far and near
   road: string;
+  surface?: "dirt";                    // untarred road: ruts, potholes, and mud when it rains. Tarred when left out.
   shopWalls: string[]; awnings: [string, string]; door: string;
   umbrellas: string[]; goods: string[];
   mix: [number, number, number];       // share of roadside shops, stalls and trees
@@ -49,7 +51,7 @@ export const MARKETS: Market[] = [
     look: {
       skyTop: "#ffd36b", skyBottom: "#ff9a5a", sun: "rgba(255,255,255,.4)", sunX: 700,
       skyline: "shacks", skylineColors: ["#b85c2f", "#c9703a", "#8d5a3b", "#a8452f", "#d9a441"], lit: "rgba(255,236,170,.65)",
-      ground: ["#bba878", "#d9c493"], road: "#4a4140",
+      ground: ["#bba878", "#d9c493"], road: "#8b6742", surface: "dirt",
       shopWalls: ["#a85a55", "#c4894f", "#8d5a3b", "#7d9a6b"], awnings: ["#e4382f", "#fff8e1"], door: "#3b2a1a",
       umbrellas: ["#e4382f", "#0e8f4e", "#f2c200", "#2b6cb0"], goods: ["#ff8a3d", "#f2c200", "#0e8f4e", "#e4382f", "#ff8a3d"],
       mix: [0.4, 0.45, 0.15], tree: "leafy",
@@ -64,7 +66,7 @@ export const MARKETS: Market[] = [
     look: {
       skyTop: "#e8b27a", skyBottom: "#d98866", sun: "rgba(255,225,170,.5)", sunX: 220,
       skyline: "blocks", skylineColors: ["#8a4b4f", "#a85a55"], lit: "rgba(255,236,170,.65)",
-      ground: ["#b09c78", "#c9b58a"], road: "#37373d",
+      ground: ["#b09c78", "#c9b58a"], road: "#7e5d3d", surface: "dirt",
       shopWalls: ["#a85a55", "#8a4b4f", "#c4894f", "#6f8aa0"], awnings: ["#2b6cb0", "#fff8e1"], door: "#3b2a1a",
       umbrellas: ["#2b6cb0", "#e4382f", "#f2c200", "#0e8f4e"], goods: ["#f2c200", "#e4382f", "#4aa3df", "#ff8a3d", "#f2f2f2"],
       mix: [0.5, 0.3, 0.2], tree: "leafy",
@@ -79,7 +81,7 @@ export const MARKETS: Market[] = [
     look: {
       skyTop: "#ffd98a", skyBottom: "#ff9a7a", sun: "rgba(255,255,255,.45)", sunX: 760,
       skyline: "blocks", skylineColors: ["#7f8c9d", "#6a7482", "#8d97a3"], lit: "rgba(214,232,247,.75)",
-      ground: ["#c2bfae", "#d6d3c3"], road: "#35373d",
+      ground: ["#c2bfae", "#d6d3c3"], road: "#876a4a", surface: "dirt",
       shopWalls: ["#6f8aa0", "#7d9a6b", "#c4894f", "#a85a55"], awnings: ["#7a3fb0", "#fff8e1"], door: "#2a2630",
       umbrellas: ["#7a3fb0", "#2b6cb0", "#e4382f", "#f2c200"], goods: ["#f2c200", "#7a3fb0", "#2fbf71", "#e4382f", "#4aa3df"],
       mix: [0.5, 0.35, 0.15], tree: "leafy",
