@@ -8,7 +8,7 @@ import { JUNCTION_ITEMS, hasItem, hasJunction, junctionForItem, starterUnlocks, 
 import type { SaveData } from "@/lib/storage";
 import LockedJunction from "./LockedJunction";
 
-import { CAPACITY, ITEMS, ITEM_IDS, countStock, naira } from "@/game/engine/items";
+import { CAPACITY, CORE_ITEMS, ITEMS, ITEM_IDS, countStock, naira } from "@/game/engine/items";
 import { JUNCTIONS, JUNCTION_LIST, type Junction } from "@/game/engine/junctions";
 import { feeRange, marketsFor } from "@/game/engine/markets";
 import type { JunctionScene, Snapshot } from "@/game/scenes/JunctionScene";
@@ -72,96 +72,146 @@ export default function GameView({ demo = false }: { demo?: boolean }) {
 
 function Controls({ scene, snap, unlocks, beforeBuy, onBought }: { scene: JunctionScene; snap: Snapshot; unlocks: Unlocks; beforeBuy: () => Promise<void>; onBought: (s: SaveData) => void }) {
   const [notice, setNotice] = useState("");
+  const [open, setOpen] = useState<null | "loc" | "tray">(null);
+  const [locOk, setLocOk] = useState(false); // has the player chosen a junction this visit?
+  const dock = useRef<HTMLDivElement>(null);
+
+  // Sheets close on Escape, on a tap anywhere outside the dock, and once you walk onto the road.
+  useEffect(() => {
+    if (!open) return;
+    const away = (e: PointerEvent) => { if (!dock.current?.contains(e.target as Node)) setOpen(null); };
+    const esc = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(null); };
+    document.addEventListener("pointerdown", away); document.addEventListener("keydown", esc);
+    return () => { document.removeEventListener("pointerdown", away); document.removeEventListener("keydown", esc); };
+  }, [open]);
+  useEffect(() => { if (snap.playing) setOpen(null); }, [snap.playing]);
+
+  // ---------- on the road: money, live tray, and the way out ----------
   if (snap.playing) {
+    const shown = ITEM_IDS.filter((id) => CORE_ITEMS.includes(id) || snap.stock[id] > 0);
     return (
-      <section className="panel" aria-label="On the road">
-        <div className="panel-head">
-          <h2>On the road</h2>
-          <p className="money">You have <strong>{naira(snap.money)}</strong></p>
+      <div className="dock" ref={dock} role="region" aria-label="On the road">
+        <div className="dock-row road">
+          <p className="dock-money"><small>Cash</small>{naira(snap.money)}</p>
+          <ul className={"dock-tray" + (snap.outOfStock ? " empty" : "")} aria-live="polite" aria-label="On your tray">
+            <li className="total"><strong>{snap.carrying}</strong><small>on tray</small></li>
+            {shown.map((id) => (
+              <li key={id} className={snap.stock[id] === 0 ? "gone" : ""}>
+                <span aria-hidden>{ITEMS[id].icon}</span> {snap.stock[id]}<span className="sr"> {ITEMS[id].name}</span>
+              </li>
+            ))}
+          </ul>
+          <button className="dock-btn leave" onClick={() => scene.leave()}><strong>Leave junction</strong></button>
         </div>
-        <p className="tray" aria-live="polite">
-          <strong>On your tray: {snap.carrying}</strong>
-          {ITEM_IDS.map((id) => (
-            <span key={id} className={snap.stock[id] === 0 ? "gone" : ""}>
-              <span aria-hidden>{ITEMS[id].icon}</span> {snap.stock[id]}<span className="sr"> {ITEMS[id].name}</span>
-            </span>
-          ))}
-        </p>
-        {snap.outOfStock && <p className="why" role="status">Your tray is empty. Leave the road and load more from home.</p>}
-        <p className="hint">
-          Sell while the light is red. Tap a car to run to it. A hand out means they may buy.
-          Run back to the pavement before the light turns green!
-        </p>
-        <div className="btns">
-          <button className="btn alt" onClick={() => scene.leave()}>Leave the junction</button>
-        </div>
-      </section>
+        {snap.outOfStock && <p className="dock-why" role="status">Tray empty. Leave the road and reload.</p>}
+      </div>
     );
   }
 
+  // ---------- getting ready: 1 location, 2 tray, 3 play ----------
   const athome = countStock(snap.storage);
-  return (
-    <section className="panel" aria-label="Get ready">
-      <div className="panel-head">
-        <h2>Pick a junction</h2>
-        <p className="money">You have <strong>{naira(snap.money)}</strong></p>
-      </div>
-      <div className="picker" role="radiogroup" aria-label="Junction">
-        {JUNCTION_LIST.map((j) => !hasJunction(unlocks, j.id) ? (
-          <LockedJunction key={j.id} junction={j} money={snap.money} unlocks={unlocks} beforeBuy={beforeBuy}
-            onBought={(s: SaveData, jn: Junction) => {
-              onBought(s);
-              if (hasJunction(s.unlocks, jn.id)) setNotice(`${jn.name} unlocked! You can now stock ${JUNCTION_ITEMS[jn.id].map((i) => ITEMS[i].name).join(" and ")}.`);
-            }} />
-        ) : (
-          <button key={j.id} role="radio" aria-checked={snap.junction === j.id} className="pick"
-            onClick={() => scene.selectJunction(j.id)}>
-            <strong>{j.name}</strong>
-            <span>{j.blurb}</span>
-            <span className="meta">Red light: about {j.red} seconds</span>
-            <span className="meta">Market entry: {naira(feeRange(j.id)[0])} to {naira(feeRange(j.id)[1])}</span>
-            <span className="meta mk">{marketsFor(j.id).map((m) => m.name).join(", ")}</span>
-          </button>
-        ))}
-      </div>
-      {notice && <p className="banked" role="status">{notice}</p>}
+  const next = !locOk ? 1 : snap.carrying === 0 ? 2 : 3;
+  const ready = locOk && snap.carrying > 0;
+  const toggle = (w: "loc" | "tray") => setOpen((o) => (o === w ? null : w));
 
-      <div className="panel-head">
-        <h2>Load your tray</h2>
-        <p className="money">On your tray <strong>{snap.carrying}</strong> of {CAPACITY}</p>
-      </div>
-      <p className="note">
-        Pick what to carry from your stock at home.
-        {athome === 0 && snap.carrying === 0 ? " Nothing left! Run to the market to get more." : ""}
-      </p>
-      <ul className="shop">
-        {ITEM_IDS.map((id) => !hasItem(unlocks, id) ? (
-          <li key={id} className="locked" aria-label={`${ITEMS[id].name}, locked`}>
-            <span className="icon" aria-hidden>{ITEMS[id].icon}</span>
-            <span className="what">
-              <strong>{ITEMS[id].name}</strong>
-              <small>Sells for about {naira(ITEMS[id].price)}</small>
-            </span>
-            <span className="lock-tag">🔒 Unlock {JUNCTIONS[junctionForItem(id)].name}</span>
-          </li>
-        ) : (
-          <li key={id}>
-            <span className="icon" aria-hidden>{ITEMS[id].icon}</span>
-            <span className="what"><strong>{ITEMS[id].name}</strong><small>At home: {snap.storage[id]}. Sells for about {naira(ITEMS[id].price)}</small></span>
-            <span className="qty">
-              <button className="opt" onClick={() => scene.unload(id)} disabled={snap.stock[id] === 0} aria-label={`Take ${ITEMS[id].name} off the tray`}>-</button>
-              <output aria-label={`${ITEMS[id].name} on tray`}>{snap.stock[id]}</output>
-              <button className="opt" onClick={() => scene.load(id)} disabled={snap.storage[id] === 0 || snap.carrying >= CAPACITY} aria-label={`Put ${ITEMS[id].name} on the tray`}>+</button>
-            </span>
-          </li>
-        ))}
-      </ul>
-      <div className="btns">
-        <button className="btn" onClick={() => scene.play()} disabled={snap.carrying === 0}>
-          {snap.carrying === 0 ? "Put something on your tray first" : "Play"}
+  // Spread the tray across items one at a time so it is a mixed load, not 14 sachets of water.
+  const fill = () => {
+    let added = true;
+    while (added) {
+      added = false;
+      for (const id of ITEM_IDS) {
+        const s = scene.getSnapshot();
+        if (!hasItem(unlocks, id) || s.storage[id] <= 0 || s.carrying >= CAPACITY) continue;
+        scene.load(id); added = true;
+      }
+    }
+  };
+  const clear = () => { for (const id of ITEM_IDS) { while (scene.getSnapshot().stock[id] > 0) scene.unload(id); } };
+
+  return (
+    <div className="dock" ref={dock} role="region" aria-label="Get ready">
+      {open === "loc" && (
+        <div className="sheet" role="dialog" aria-label="Choose your junction">
+          <div className="sheet-head"><h2>Where are you selling?</h2><button className="sheet-x" onClick={() => setOpen(null)} aria-label="Close">✕</button></div>
+          <div className="picker" role="radiogroup" aria-label="Junction">
+            {JUNCTION_LIST.map((j) => !hasJunction(unlocks, j.id) ? (
+              <LockedJunction key={j.id} junction={j} money={snap.money} unlocks={unlocks} beforeBuy={beforeBuy}
+                onBought={(s: SaveData, jn: Junction) => {
+                  onBought(s);
+                  if (hasJunction(s.unlocks, jn.id)) setNotice(`${jn.name} unlocked! You can now stock ${JUNCTION_ITEMS[jn.id].map((i) => ITEMS[i].name).join(" and ")}.`);
+                }} />
+            ) : (
+              <button key={j.id} role="radio" aria-checked={locOk && snap.junction === j.id} className="pick"
+                onClick={() => { scene.selectJunction(j.id); setLocOk(true); setOpen(null); }}>
+                <strong>{j.name}</strong>
+                <span>{j.blurb}</span>
+                <span className="meta">Red light: about {j.red} seconds</span>
+                <span className="meta">Market entry: {naira(feeRange(j.id)[0])} to {naira(feeRange(j.id)[1])}</span>
+                <span className="meta mk">{marketsFor(j.id).map((m) => m.name).join(", ")}</span>
+              </button>
+            ))}
+          </div>
+          {notice && <p className="banked" role="status">{notice}</p>}
+        </div>
+      )}
+
+      {open === "tray" && (
+        <div className="sheet tray-sheet" role="dialog" aria-label="Load your tray">
+          <div className="sheet-head">
+            <h2>Your tray <span className="cap">{snap.carrying}/{CAPACITY}</span></h2>
+            <button className="sheet-x" onClick={() => setOpen(null)} aria-label="Close">✕</button>
+          </div>
+          {athome === 0 && snap.carrying === 0 && <p className="dock-why">Nothing at home. Run to the market for stock.</p>}
+          <ul className="tray-grid">
+            {ITEM_IDS.map((id) => !hasItem(unlocks, id) ? (
+              <li key={id} className="tray-card locked" aria-label={`${ITEMS[id].name}, locked`}>
+                <span className="big" aria-hidden>{ITEMS[id].icon}</span>
+                <strong>{ITEMS[id].name}</strong>
+                <small>🔒 Unlock {JUNCTIONS[junctionForItem(id)].name}</small>
+              </li>
+            ) : (
+              <li key={id} className={"tray-card" + (snap.stock[id] > 0 ? " has" : "")}>
+                <span className="big" aria-hidden>{ITEMS[id].icon}</span>
+                <strong>{ITEMS[id].name}</strong>
+                <small>Home: {snap.storage[id]} · sells ~{naira(ITEMS[id].price)}</small>
+                <span className="qty">
+                  <button className="step-btn" onClick={() => scene.unload(id)} disabled={snap.stock[id] === 0} aria-label={`Take ${ITEMS[id].name} off the tray`}>-</button>
+                  <output aria-label={`${ITEMS[id].name} on tray`}>{snap.stock[id]}</output>
+                  <button className="step-btn" onClick={() => scene.load(id)} disabled={snap.storage[id] === 0 || snap.carrying >= CAPACITY} aria-label={`Put ${ITEMS[id].name} on the tray`}>+</button>
+                </span>
+              </li>
+            ))}
+          </ul>
+          <div className="sheet-foot">
+            <button className="btn alt" onClick={fill} disabled={athome === 0 || snap.carrying >= CAPACITY}>Fill it up</button>
+            <button className="btn alt" onClick={clear} disabled={snap.carrying === 0}>Empty tray</button>
+            <button className="btn" onClick={() => setOpen(null)}>Done</button>
+          </div>
+        </div>
+      )}
+
+      <div className="dock-row">
+        <button className={"dock-btn" + (locOk ? " done" : "") + (next === 1 ? " blink" : "")} onClick={() => toggle("loc")} aria-expanded={open === "loc"}>
+          <small><span className="step">{locOk ? "✓" : "1"}</span> Location</small>
+          <strong>{locOk ? `📍 ${JUNCTIONS[snap.junction].name}` : "Choose where"}</strong>
         </button>
-        <Link className="btn alt" href="/restock">Run to the market for stock</Link>
+
+        <button className={"dock-btn" + (snap.carrying > 0 ? " done" : "") + (next === 2 ? " blink" : "")} onClick={() => toggle("tray")} aria-expanded={open === "tray"}>
+          <small><span className="step">{snap.carrying > 0 ? "✓" : "2"}</span> Tray</small>
+          <strong>{snap.carrying === 0 ? "🧺 Empty: fill it" : `🧺 ${snap.carrying}/${CAPACITY} loaded`}</strong>
+          <span className="meter" aria-hidden><i style={{ width: `${(snap.carrying / CAPACITY) * 100}%` }} /></span>
+        </button>
+
+        <Link className={"dock-btn" + (athome === 0 && snap.carrying === 0 ? " blink" : "")} href="/restock">
+          <small>Stock up</small>
+          <strong>🛒 Run to market</strong>
+        </Link>
+
+        <button className={"dock-btn dock-play" + (next === 3 ? " ready" : "")} onClick={() => scene.play()} disabled={!ready}>
+          <small>{ready ? "3 · Go" : !locOk ? "Pick a location first" : "Load your tray first"}</small>
+          <strong>▶ Play</strong>
+        </button>
       </div>
-    </section>
+    </div>
   );
 }
