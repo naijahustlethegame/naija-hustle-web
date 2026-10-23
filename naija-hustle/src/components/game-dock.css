@@ -4,8 +4,11 @@
  *
  * Rule of thumb: nothing here floats over the street while you are playing.
  *  - Desktop / tablet: the dock sits in the page under the street; sheets open in the page above the dock.
- *  - Phone, portrait: same, but compact (2-3 buttons per row); sheets are bottom sheets that leave the street visible.
+ *  - Phone, portrait: same, but compact; sheets are bottom sheets that leave the street visible.
  *  - Phone, landscape: the street is sized by screen height and the dock becomes a column beside it.
+ *
+ * The dock has two parts: the main flow (Location, Tray, Play) and a "tools" strip underneath it
+ * (Market, Sellers, Invite) of three equal buttons, so the extra buttons never crowd the main flow.
  */
 
 /* ---------- the street ---------- */
@@ -27,12 +30,6 @@
   border: 3px solid var(--tar); border-radius: 16px; box-shadow: 4px 4px 0 var(--tar);
 }
 .game .dock-row { display: flex; flex-wrap: wrap; gap: 10px; align-items: stretch; margin: 0; padding: 0; }
-
-.game .dock-cash { flex: 1 1 200px; display: flex; flex-direction: column; justify-content: center; gap: 2px; min-width: 0; }
-.game .dock-cash > span { display: flex; align-items: baseline; gap: 8px; line-height: 1.1; }
-.game .dock-cash small { font-size: 0.8rem; font-weight: 700; }
-.game .dock-cash strong { font-family: var(--display); font-weight: 400; font-size: 1.7rem; line-height: 1; }
-.game .dock-step { margin: 0; font-size: 0.9rem; font-weight: 700; line-height: 1.25; }
 
 .game .dock-btn {
   appearance: none; flex: 1 1 150px; width: auto; height: auto; min-width: 0; min-height: 52px; margin: 0; padding: 8px 12px;
@@ -65,9 +62,15 @@
 .game .dock-play:not(:disabled) { background: var(--red); color: #fff; border-color: var(--tar); box-shadow: 0 4px 0 var(--tar); cursor: pointer; }
 .game .dock-play.ready:not(:disabled) { background: var(--go); }
 
-.game .dock-btn.mini { flex: 1 1 110px; min-height: 48px; align-items: center; text-align: center; padding: 6px 8px; }
-.game .dock-btn.mini > span { font-size: 0.85rem; font-weight: 700; line-height: 1.15; }
-.game .dock-btn.mini small { justify-content: center; font-size: 0.7rem; }
+/* the tools strip: Market, Sellers, Invite. Always three equal columns, always on its own row under the main flow. */
+.game .dock-tools {
+  flex: 1 1 100%; order: 10;
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px;
+  margin-top: 2px; padding-top: 10px; border-top: 3px dashed rgba(27, 27, 34, 0.25);
+}
+.game .dock-btn.mini { flex: none; min-height: 48px; align-items: center; text-align: center; padding: 6px 8px; }
+.game .dock-btn.mini > span { font-size: 0.85rem; font-weight: 700; line-height: 1.15; white-space: nowrap; }
+.game .dock-btn.mini small { display: block; width: 100%; text-align: center; font-size: 0.7rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .game .dock-btn.mini.cash { background: #fff2b8; }
 
 .game .dock-why { margin: 8px 0 0; font-size: 0.9rem; font-weight: 700; color: var(--red); }
@@ -130,15 +133,12 @@
 @media (max-width: 700px) {
   .page:has(> .game) { padding: 8px 12px 24px; }
   .game .dock { margin-top: 10px; padding: 8px; border-radius: 14px; }
-  .game .dock-row { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px; }
-  .game .dock-cash { grid-column: 1 / -1; flex-direction: row; align-items: baseline; justify-content: space-between; gap: 10px; }
-  .game .dock-step { text-align: right; font-size: 0.85rem; }
+  /* Location | Tray on one row, Play full width, then the three tools. */
+  .game .dock-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
   .game .dock-btn { flex: none; }
-  .game .dock-where, .game .dock-load { grid-column: span 3; }
-  .game .dock-play { grid-column: 1 / -1; order: 3; }
   .game .dock-where { order: 1; } .game .dock-load { order: 2; }
-  .game .dock-market, .game .dock-sellers, .game .dock-invite { grid-column: span 2; }
-  .game .dock-market { order: 4; } .game .dock-sellers { order: 5; } .game .dock-invite { order: 6; }
+  .game .dock-play { grid-column: 1 / -1; order: 3; }
+  .game .dock-tools { grid-column: 1 / -1; order: 4; gap: 6px; padding-top: 8px; }
   .game .dock-row.road { grid-template-columns: auto auto minmax(0, 1fr); }
   .game .sound-row { margin-top: 8px; }
   .game .sound-btn { padding: 5px 12px; font-size: 0.85rem; }
@@ -182,17 +182,14 @@
 
   .game .dock { padding: 6px; }
   .game .dock-row { display: flex; flex-direction: row; flex-wrap: wrap; gap: 6px; }
-  .game .dock-cash { flex-direction: row; justify-content: space-between; align-items: baseline; }
-  .game .dock-cash strong { font-size: 1.35rem; }
-  .game .dock-step { display: none; }
   .game .dock-btn { min-height: 38px; padding: 3px 10px; gap: 0; box-shadow: 0 3px 0 var(--tar); }
   .game .dock-btn .meter { display: none; }
   .game .dock-row > * { flex: 1 1 100%; }
   .game .dock-play { min-height: 44px; order: 3; }
   .game .dock-play strong { font-size: 1.35rem; }
   .game .dock-where { order: 1; } .game .dock-load { order: 2; }
-  .game .dock-market { order: 4; } .game .dock-sellers { order: 5; } .game .dock-invite { order: 6; }
-  .game .dock-row > .dock-btn.mini { flex: 1 1 calc(33.3% - 6px); min-height: 38px; padding: 2px 4px; }
+  .game .dock-tools { order: 4; gap: 6px; padding-top: 6px; border-top-width: 2px; }
+  .game .dock-tools > .dock-btn.mini { min-height: 38px; padding: 2px 4px; }
   .game .dock-btn.mini > span { font-size: 0.78rem; }
   .game .dock-btn.mini small { display: none; } /* the Sellers button still turns yellow when money is waiting */
   .game .dock-row.road { display: flex; flex-direction: row; flex-wrap: wrap; }
