@@ -3,8 +3,8 @@ import "./globals.css";
 
 
 export const metadata: Metadata = {
-  title: "Naija Hustle: beat the green light",
-  description: "Sell to stopped cars at a Lagos red light. Read who will buy, make the sale, and get off the road before the light turns green.",
+  title: "Naija Hustle: Start from nothing, Build your Empire",
+  description: "Sell to stopped cars at a Lagos red light. Open your stand and sell to other players, Do you have what it takes to survive the Naija Hustle?.",
 };
 export const viewport: Viewport = { width: "device-width", initialScale: 1, viewportFit: "cover", themeColor: "#f7b500" };
 
