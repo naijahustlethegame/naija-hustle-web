@@ -753,8 +753,8 @@ export class JunctionScene {
 
   private drawHud() {
     const c = this.ctx;
-    // money (hidden while the homepage is just watching other players)
-    if (this.botOn() || !this.demo) { this.panel(14, 12, 208, 44); this.text(naira(this.money), 28, 46, 30, "#ffd84a"); }
+    // money: the play screen shows it in the dock, so only the homepage bot's canvas keeps it
+    if (this.demo && this.botOn()) { this.panel(14, 12, 208, 44); this.text(naira(this.money), 28, 46, 30, "#ffd84a"); }
     // who is on this road: a small tag in the bottom corner, so it never covers the traffic light
     if (this.net && this.roomId) {
       const n = this.peers.size + (this.playing && !this.demo ? 1 : 0);
@@ -786,19 +786,22 @@ export class JunctionScene {
     }
     if (!this.playing) return;
 
-    // tray: the total first, then what is left of each item
-    const total = countStock(this.stock), y0 = H - 56, pulse = this.stockPulse > 0 && Math.floor(this.t * 14) % 2 === 0;
-    // the everyday four always show; market-only goods show while you are carrying them. Slides left to leave room for the streak badge.
-    const shown = ITEM_IDS.filter((id) => CORE_ITEMS.includes(id) || this.stock[id] > 0);
-    const pw = shown.length * 66 + 112, left = Math.max(14, Math.min(208, 750 - pw)), x0 = left + 92;
-    this.panel(left, y0 - 4, pw, 50, total === 0 ? "rgba(160,30,24,.92)" : "rgba(27,27,34,.88)");
-    c.font = "bold 10px sans-serif"; c.textAlign = "left"; c.fillStyle = "rgba(255,255,255,.7)"; c.fillText("ON TRAY", x0 - 80, y0 + 12);
-    this.text(total === 0 ? "EMPTY" : `${total}`, x0 - 80, y0 + 38, total === 0 ? 20 : 28, pulse ? "#ff9f43" : "#ffd84a");
-    shown.forEach((id, i) => {
-      const x = x0 + i * 66;
-      c.font = "20px sans-serif"; c.textAlign = "left"; c.fillStyle = "#fff"; c.fillText(ITEMS[id].icon, x, y0 + 28);
-      this.text(`x${this.stock[id]}`, x + 28, y0 + 30, 20, this.stock[id] > 0 ? "#ffffff" : "#8c8c96");
-    });
+    // tray: shown in the dock on the play screen; the homepage bot keeps the canvas version
+    const total = countStock(this.stock);
+    if (this.demo) {
+      const y0 = H - 56, pulse = this.stockPulse > 0 && Math.floor(this.t * 14) % 2 === 0;
+      // the everyday four always show; market-only goods show while you are carrying them. Slides left to leave room for the streak badge.
+      const shown = ITEM_IDS.filter((id) => CORE_ITEMS.includes(id) || this.stock[id] > 0);
+      const pw = shown.length * 66 + 112, left = Math.max(14, Math.min(208, 750 - pw)), x0 = left + 92;
+      this.panel(left, y0 - 4, pw, 50, total === 0 ? "rgba(160,30,24,.92)" : "rgba(27,27,34,.88)");
+      c.font = "bold 10px sans-serif"; c.textAlign = "left"; c.fillStyle = "rgba(255,255,255,.7)"; c.fillText("ON TRAY", x0 - 80, y0 + 12);
+      this.text(total === 0 ? "EMPTY" : `${total}`, x0 - 80, y0 + 38, total === 0 ? 20 : 28, pulse ? "#ff9f43" : "#ffd84a");
+      shown.forEach((id, i) => {
+        const x = x0 + i * 66;
+        c.font = "20px sans-serif"; c.textAlign = "left"; c.fillStyle = "#fff"; c.fillText(ITEMS[id].icon, x, y0 + 28);
+        this.text(`x${this.stock[id]}`, x + 28, y0 + 30, 20, this.stock[id] > 0 ? "#ffffff" : "#8c8c96");
+      });
+    }
     if (total === 0) { this.text("TRAY EMPTY. LEAVE TO RESTOCK", W / 2, 206, 24, "#ffd84a", "center"); }
     // streak
     if (this.streak >= 2 && (this.phase === "red" || this.phase === "yellow")) {

@@ -35,14 +35,36 @@ const toSave = (p: RawPlayer): SaveData => ({
 let pending: Promise<SaveData> | null = null;
 export function loadPlayer(): Promise<SaveData> {
   return (pending ??= (async () => {
+    captureRef();
     let inited = false; try { inited = sessionStorage.getItem("nh:init") === "1"; } catch {}
     const raw = inited ? await call<RawPlayer>("/player") : await call<RawPlayer>("/player/init", "POST", { avatar: loadAvatar() });
     try { sessionStorage.setItem("nh:init", "1"); } catch {}
+    void redeemRef();
     return toSave(raw);
   })().finally(() => { pending = null; }));
 }
 
+/** Invite links look like /play?ref=CODE. Remember the code until the player exists, then tell the server who invited them. */
+const REF_KEY = "nh:ref";
+function captureRef() {
+  try { const c = new URLSearchParams(location.search).get("ref"); if (c && /^[A-Za-z0-9]{6,10}$/.test(c)) localStorage.setItem(REF_KEY, c.toUpperCase()); } catch {}
+}
+async function redeemRef() {
+  let code: string | null = null;
+  try { code = localStorage.getItem(REF_KEY); } catch {}
+  if (!code) return;
+  try { await call("/referrals/redeem", "POST", { code }); }
+  catch (e) { if (!(e instanceof ApiError) || e.status >= 500 || e.status === 429) return; } // offline or busy: try again next visit
+  try { localStorage.removeItem(REF_KEY); } catch {}
+}
+
+export type Invites = {
+  code: string; reward: number; friendReward: number; salesToQualify: number; maxPaid: number; paid: number; earned: number;
+  friends: { name: string; sales: number; done: boolean; reward: number }[];
+};
+
 export const api = {
+  invites: () => call<Invites>("/referrals/me"),
   setJunction: (junction: JunctionId) => call<{ junction: string }>("/player/junction", "POST", { junction }),
   tray: (toTray: Stock, ka = false) => call("/player/tray", "POST", { toTray }, ka),
   sales: (sales: { item: string; price: number }[], ka = false) => call("/player/sales", "POST", { sales }, ka),
