@@ -10,7 +10,7 @@ export default function Home() {
       <main>
         <section className="hero">
           <div className="hero-copy">
-            <h1>Beat the green light.</h1>
+            <h1>Survive the Naija Hustle.</h1>
             <p>
               Sell water, snacks and gadgets to cars at a Lagos junction. Pick who will
               buy, make the sale, and get off the road before the light turns green.
