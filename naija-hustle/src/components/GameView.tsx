@@ -15,6 +15,7 @@ import { JUNCTIONS, JUNCTION_LIST, type Junction } from "@/game/engine/junctions
 import { feeRange, marketsFor } from "@/game/engine/markets";
 import type { JunctionScene, Snapshot } from "@/game/scenes/JunctionScene";
 import SoundToggle from "./SoundToggle";
+import "./game-dock.css";
 
 /**
  * The street. With `demo` a bot plays it on the homepage. Otherwise the light cycles by itself:
@@ -58,7 +59,7 @@ export default function GameView({ demo = false }: { demo?: boolean }) {
     return () => { dead = true; stop(); };
   }, [demo]);
 
-  return (
+  const body = (
     <>
       <div className="frame">
         <canvas ref={ref} aria-label={demo ? "Live gameplay: a hawker working a red light" : "Naija Hustle street"} />
@@ -71,6 +72,8 @@ export default function GameView({ demo = false }: { demo?: boolean }) {
         onBought={(s: SaveData) => { setUnlocks(s.unlocks); setSellers(s.sellers); scene.applyServer(s); }} />}
     </>
   );
+  // The homepage demo keeps its own layout. The real game gets .game, which the mobile layout in game-dock.css hangs on.
+  return demo ? body : <div className="game">{body}</div>;
 }
 
 function Controls({ scene, snap, unlocks, sellers, beforeBuy, onBought }: { scene: JunctionScene; snap: Snapshot; unlocks: Unlocks; sellers: HiredSeller[]; beforeBuy: () => Promise<void>; onBought: (s: SaveData) => void }) {
@@ -204,20 +207,20 @@ function Controls({ scene, snap, unlocks, sellers, beforeBuy, onBought }: { scen
           <p className="dock-step" aria-live="polite">{next === 1 ? "Step 1: choose where to sell" : next === 2 ? "Step 2: load your tray" : "Ready! Press Play"}</p>
         </div>
 
-        <button className={"dock-btn" + (locOk ? " done" : "") + (next === 1 ? " blink" : "")} onClick={() => toggle("loc")} aria-expanded={open === "loc"}>
+        <button className={"dock-btn dock-where" + (locOk ? " done" : "") + (next === 1 ? " blink" : "")} onClick={() => toggle("loc")} aria-expanded={open === "loc"}>
           <small><span className="step">{locOk ? "✓" : "1"}</span> Location</small>
           <strong>{locOk ? `📍 ${JUNCTIONS[snap.junction].name}` : "Choose where"}</strong>
         </button>
 
-        <button className={"dock-btn" + (snap.carrying > 0 ? " done" : "") + (next === 2 ? " blink" : "")} onClick={() => toggle("tray")} aria-expanded={open === "tray"}>
+        <button className={"dock-btn dock-load" + (snap.carrying > 0 ? " done" : "") + (next === 2 ? " blink" : "")} onClick={() => toggle("tray")} aria-expanded={open === "tray"}>
           <small><span className="step">{snap.carrying > 0 ? "✓" : "2"}</span> Tray</small>
           <strong>{snap.carrying === 0 ? "🧺 Empty: fill it" : `🧺 ${snap.carrying}/${CAPACITY} loaded`}</strong>
           <span className="meter" aria-hidden><i style={{ width: `${(snap.carrying / CAPACITY) * 100}%` }} /></span>
         </button>
 
-        <Link className={"dock-btn" + (athome === 0 && snap.carrying === 0 ? " blink" : "")} href="/restock">
+        <Link className={"dock-btn mini dock-market" + (athome === 0 && snap.carrying === 0 ? " blink" : "")} href="/restock">
+          <span>🛒 Market</span>
           <small>Stock up</small>
-          <strong>🛒 Run to market</strong>
         </Link>
 
         <button className={"dock-btn dock-play" + (next === 3 ? " ready" : "")} onClick={() => scene.play()} disabled={!ready}>
@@ -225,13 +228,13 @@ function Controls({ scene, snap, unlocks, sellers, beforeBuy, onBought }: { scen
           <strong>▶ Play</strong>
         </button>
 
-        <Link className={"dock-btn mini" + (waiting > 0 ? " cash" : "")} href="/sellers">
-          <span>👥 My sellers</span>
+        <Link className={"dock-btn mini dock-sellers" + (waiting > 0 ? " cash" : "")} href="/sellers">
+          <span>👥 Sellers</span>
           <small>{sellers.length === 0 ? "Hire your first" : waiting > 0 ? `${naira(waiting)} waiting` : `${sellers.length} hired`}</small>
         </Link>
 
-        <button className="dock-btn mini" onClick={() => toggle("invite")} aria-expanded={open === "invite"}>
-          <span>🎁 Invite friends</span>
+        <button className="dock-btn mini dock-invite" onClick={() => toggle("invite")} aria-expanded={open === "invite"}>
+          <span>🎁 Invite</span>
           <small>Earn cash</small>
         </button>
       </div>
