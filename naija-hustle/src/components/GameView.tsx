@@ -13,6 +13,7 @@ import { JUNCTIONS, JUNCTION_LIST, type Junction } from "@/game/engine/junctions
 import { feeRange, marketsFor } from "@/game/engine/markets";
 import type { JunctionScene, Snapshot } from "@/game/scenes/JunctionScene";
 import SoundToggle from "./SoundToggle";
+import "./game-dock.css";
 
 /**
  * The street. With `demo` a bot plays it on the homepage. Otherwise the light cycles by itself:
@@ -55,7 +56,7 @@ export default function GameView({ demo = false }: { demo?: boolean }) {
     return () => { dead = true; stop(); };
   }, [demo]);
 
-  return (
+  const body = (
     <>
       <div className="frame">
         <canvas ref={ref} aria-label={demo ? "Live gameplay: a hawker working a red light" : "Naija Hustle street"} />
@@ -68,6 +69,8 @@ export default function GameView({ demo = false }: { demo?: boolean }) {
         onBought={(s: SaveData) => { setUnlocks(s.unlocks); scene.applyServer(s); }} />}
     </>
   );
+  // The homepage demo keeps its own layout. The real game gets .game, which the mobile layout in game-dock.css hangs on.
+  return demo ? body : <div className="game">{body}</div>;
 }
 
 function Controls({ scene, snap, unlocks, beforeBuy, onBought }: { scene: JunctionScene; snap: Snapshot; unlocks: Unlocks; beforeBuy: () => Promise<void>; onBought: (s: SaveData) => void }) {
@@ -86,15 +89,15 @@ function Controls({ scene, snap, unlocks, beforeBuy, onBought }: { scene: Juncti
   }, [open]);
   useEffect(() => { if (snap.playing) setOpen(null); }, [snap.playing]);
 
-  // ---------- on the road: money, live tray, and the way out ----------
+  // ---------- on the road: cash, tray, and the way out ----------
   if (snap.playing) {
     const shown = ITEM_IDS.filter((id) => CORE_ITEMS.includes(id) || snap.stock[id] > 0);
     return (
       <div className="dock" ref={dock} role="region" aria-label="On the road">
         <div className="dock-row road">
-          <p className="dock-money"><small>Cash</small>{naira(snap.money)}</p>
-          <ul className={"dock-tray" + (snap.outOfStock ? " empty" : "")} aria-live="polite" aria-label="On your tray">
-            <li className="total"><strong>{snap.carrying}</strong><small>on tray</small></li>
+          <div className="dock-stat"><small>Cash</small><strong>{naira(snap.money)}</strong></div>
+          <div className={"dock-stat" + (snap.outOfStock ? " empty" : "")} aria-live="polite"><small>On tray</small><strong>{snap.carrying}</strong></div>
+          <ul className="dock-tray" aria-label="On your tray">
             {shown.map((id) => (
               <li key={id} className={snap.stock[id] === 0 ? "gone" : ""}>
                 <span aria-hidden>{ITEMS[id].icon}</span> {snap.stock[id]}<span className="sr"> {ITEMS[id].name}</span>
@@ -191,18 +194,18 @@ function Controls({ scene, snap, unlocks, beforeBuy, onBought }: { scene: Juncti
       )}
 
       <div className="dock-row">
-        <button className={"dock-btn" + (locOk ? " done" : "") + (next === 1 ? " blink" : "")} onClick={() => toggle("loc")} aria-expanded={open === "loc"}>
+        <button className={"dock-btn dock-where" + (locOk ? " done" : "") + (next === 1 ? " blink" : "")} onClick={() => toggle("loc")} aria-expanded={open === "loc"}>
           <small><span className="step">{locOk ? "✓" : "1"}</span> Location</small>
-          <strong>{locOk ? `📍 ${JUNCTIONS[snap.junction].name}` : "Choose where"}</strong>
+          <strong>{locOk ? `📍 ${JUNCTIONS[snap.junction].name}` : "Choose where to sell"}</strong>
         </button>
 
-        <button className={"dock-btn" + (snap.carrying > 0 ? " done" : "") + (next === 2 ? " blink" : "")} onClick={() => toggle("tray")} aria-expanded={open === "tray"}>
+        <button className={"dock-btn dock-load" + (snap.carrying > 0 ? " done" : "") + (next === 2 ? " blink" : "")} onClick={() => toggle("tray")} aria-expanded={open === "tray"}>
           <small><span className="step">{snap.carrying > 0 ? "✓" : "2"}</span> Tray</small>
           <strong>{snap.carrying === 0 ? "🧺 Empty: fill it" : `🧺 ${snap.carrying}/${CAPACITY} loaded`}</strong>
           <span className="meter" aria-hidden><i style={{ width: `${(snap.carrying / CAPACITY) * 100}%` }} /></span>
         </button>
 
-        <Link className={"dock-btn" + (athome === 0 && snap.carrying === 0 ? " blink" : "")} href="/restock">
+        <Link className={"dock-btn dock-market" + (athome === 0 && snap.carrying === 0 ? " blink" : "")} href="/restock">
           <small>Stock up</small>
           <strong>🛒 Run to market</strong>
         </Link>
