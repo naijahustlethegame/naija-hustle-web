@@ -222,15 +222,41 @@ h3 { font-size: 1.5rem; }
 .step-btn { width: 2.6rem; height: 2.6rem; border-radius: 12px; border: 3px solid var(--tar); background: #fff; font: 700 1.3rem var(--body); cursor: pointer; }
 .step-btn:disabled { opacity: 0.35; cursor: not-allowed; }
 
-/* dock while on the road */
+/* dock: cash line and the two small buttons under the main row */
+.dock-cash { grid-column: 1 / -1; display: flex; justify-content: space-between; align-items: center; gap: 4px 14px; flex-wrap: wrap; padding: 0 4px; }
+.dock-cash span { display: flex; align-items: baseline; gap: 8px; }
+.dock-cash small { font: 700 0.7rem var(--body); text-transform: uppercase; letter-spacing: 0.06em; color: #fff; opacity: 0.7; }
+.dock-cash strong { font-family: var(--display); font-weight: 400; font-size: 1.6rem; line-height: 1; color: var(--danfo); }
+.dock-step { margin: 0; color: #fff; font-weight: 700; font-size: 0.95rem; }
+.dock-btn.mini { grid-column: span 2; flex-direction: row; align-items: center; justify-content: space-between; gap: 10px; min-height: 0; padding: 8px 14px; }
+.dock-btn.mini span { font-family: var(--display); font-size: 1.1rem; letter-spacing: 0.01em; }
+.dock-btn.mini small { opacity: 0.85; }
+.dock-btn.cash { background: var(--amber); }
+@media (max-width: 700px) { .dock-btn.mini { grid-column: span 1; } }
+
+/* invite sheet */
+.invite-sheet { max-width: 560px; margin-left: auto; }
+.invite-rule { margin: 0 0 12px; }
+.invite-link { display: flex; gap: 10px; align-items: stretch; }
+.invite-link input { flex: 1; min-width: 0; padding: 10px 12px; border: 3px solid var(--tar); border-radius: 12px; font: 700 0.95rem var(--body); background: #fff6d6; color: var(--tar); }
+.invite-link .btn { padding: 10px 18px; font-size: 1rem; }
+.sheet-foot.start { justify-content: flex-start; }
+.invite-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 16px 0 6px; text-align: center; }
+.invite-stats div { border: 3px solid var(--tar); border-radius: 12px; padding: 6px; }
+.invite-stats dt { font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; }
+.invite-stats dd { font-family: var(--display); font-size: 1.5rem; line-height: 1.1; }
+.invite-list { list-style: none; padding: 0; margin-top: 8px; }
+.invite-list li { display: flex; justify-content: space-between; gap: 12px; padding: 8px 0; border-bottom: 3px dashed var(--tar); }
+.invite-list li:last-child { border-bottom: 0; }
+.invite-list .ok { color: var(--go); font-weight: 700; }
+
+/* dock while on the road: cash and tray count share one look so they line up */
 .dock-row.road { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
-.dock-money { margin: 0; color: var(--danfo); font-family: var(--display); font-size: 1.7rem; line-height: 1; display: flex; flex-direction: column; }
-.dock-money small { font: 700 0.7rem var(--body); text-transform: uppercase; letter-spacing: 0.06em; color: #fff; opacity: 0.7; }
+.dock-stat { display: flex; flex-direction: column; justify-content: center; min-width: 5.5rem; padding-right: 14px; border-right: 2px solid rgba(255, 255, 255, 0.25); line-height: 1; }
+.dock-stat small { font: 700 0.7rem var(--body); text-transform: uppercase; letter-spacing: 0.06em; color: #fff; opacity: 0.7; margin-bottom: 4px; }
+.dock-stat strong { font-family: var(--display); font-weight: 400; font-size: 1.8rem; color: var(--danfo); }
+.dock-stat.empty strong { color: #ff9f43; }
 .dock-tray { flex: 1; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px; list-style: none; padding: 0; color: #fff; font-weight: 700; font-size: 1.1rem; }
-.dock-tray .total { display: flex; align-items: baseline; gap: 6px; padding-right: 14px; border-right: 2px solid rgba(255, 255, 255, 0.25); }
-.dock-tray .total strong { font-family: var(--display); font-weight: 400; font-size: 1.8rem; color: var(--danfo); }
-.dock-tray .total small { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.06em; opacity: 0.7; }
 .dock-tray .gone { opacity: 0.4; }
-.dock-tray.empty .total strong { color: #ff9f43; }
 .dock-why { margin: 8px 0 0; font-weight: 700; }
 .dock > .dock-why { padding: 8px 12px; border-radius: 12px; background: var(--red); color: #fff; }
