@@ -260,3 +260,12 @@ h3 { font-size: 1.5rem; }
 .dock-tray .gone { opacity: 0.4; }
 .dock-why { margin: 8px 0 0; font-weight: 700; }
 .dock > .dock-why { padding: 8px 12px; border-radius: 12px; background: var(--red); color: #fff; }
+
+/* Sellers and Invite (second dock row). Append to the end of your stylesheet.
+   Desktop already works: .dock-btn.mini spans 2 of the 4 columns, so the two buttons are equal halves under the main row.
+   On a phone each half is only ~150px wide, so the label stacks above the small text instead of sitting beside it. */
+.dock-btn.mini span { line-height: 1.1; }
+@media (max-width: 700px) {
+  .dock-btn.mini { flex-direction: column; align-items: flex-start; justify-content: center; gap: 1px; padding: 7px 12px; }
+}
+ 
