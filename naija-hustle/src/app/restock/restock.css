@@ -1,9 +1,5 @@
 .frame.runner canvas { touch-action: none; cursor: pointer; }
 
-.rules { list-style: none; padding: 0; margin: 14px 0 0; display: grid; gap: 6px; }
-.rules li { padding: 8px 0; border-bottom: 3px dashed var(--tar); }
-.rules li:last-child { border-bottom: 0; }
-
 .why { font-weight: 700; color: var(--red); }
 
 .pad { display: grid; grid-template-columns: 1fr 1.4fr 1fr; gap: 12px; margin-top: 14px; max-width: 520px; }
@@ -15,3 +11,7 @@
 .chips { list-style: none; padding: 0; margin: 12px 0 0; display: flex; flex-wrap: wrap; gap: 8px; }
 .chips li { padding: 6px 12px; border: 3px solid var(--tar); border-radius: 999px; background: var(--danfo); font-weight: 700; }
 .totals { margin-top: 14px; }
+
+.btn.risky { background: #d6540c; }
+.chips li.mult { background: #d6540c; color: #fff; border-color: var(--tar); }
+.banked { margin-top: 8px; font-weight: 700; color: var(--go); }

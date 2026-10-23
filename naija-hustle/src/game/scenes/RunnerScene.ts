@@ -39,6 +39,8 @@ const LANE_SPEED = 9;             // lane lerp, lanes per second
 const COUNTDOWN = 0.8;            // seconds per count
 const PRE_SPEED = 12;             // scroll speed during the countdown
 const CASH_ODDS = [0.6, 0.3, 0.1];
+const RAIN_CHANCE = 0.4;          // chance that a run happens in the rain
+const DIRT_POTHOLES = 0.8;        // on a dirt road most low obstacles are potholes (0.9 when it is wet)
 // ---- risk ladder: each extra run in a row multiplies the pickups and makes the road harder ----
 export const MAX_LEVEL = 4;
 const speedK = (lv: number) => 1 + 0.1 * (lv - 1);   // faster
@@ -79,7 +81,14 @@ export type RunResult = {
   cash: number;     // cash bundles collected
   stumbles: number;
 };
-type Opts = { avatar: AvatarConfig; market: Market; reducedMotion?: boolean; onEnd: (r: RunResult) => void };
+type Opts = { avatar: AvatarConfig; market: Market; reducedMotion?: boolean; tips?: boolean; onEnd: (r: RunResult) => void };
+
+/** Blend two #rrggbb colours: k=0 gives `a`, k=1 gives `b`. */
+function mix(a: string, b: string, k: number) {
+  const n = (h: string, i: number) => parseInt(h.slice(1 + i * 2, 3 + i * 2), 16);
+  const ch = (i: number) => Math.round(n(a, i) + (n(b, i) - n(a, i)) * k).toString(16).padStart(2, "0");
+  return `#${ch(0)}${ch(1)}${ch(2)}`;
+}
 
 function rr(c: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number, fill: string) {
   c.fillStyle = fill; c.beginPath(); c.roundRect(x, y, w, h, Math.max(0, r)); c.fill();
@@ -111,6 +120,8 @@ export class RunnerScene {
   private space = CAPACITY; private level = 1;
   private items: Stock = emptyStock(); private dropped = 0; private cash = 0;
   private startX = 0; private startY = 0; private down = false;
+  private wet = false;     // raining on this run
+  private get dirt() { return this.market.look.surface === "dirt"; }
 
   private onKey = (e: KeyboardEvent) => this.key(e);
   private onDown = (e: PointerEvent) => { this.down = true; this.startX = e.clientX; this.startY = e.clientY; };
@@ -141,6 +152,9 @@ export class RunnerScene {
     this.canvas.removeEventListener("pointerup", this.onUp);
   }
 
+  /** Show the control hint (first runs only). */
+  setTips(on: boolean) { this.opts.tips = on; }
+
   /** Change where the run goes. Ignored while a run is in progress. */
   setMarket(m: Market) {
     if (this.active) return;
@@ -157,6 +171,7 @@ export class RunnerScene {
     this.objs = []; this.pops = []; this.nextZ = COUNTDOWN * 4 * PRE_SPEED + 45; this.free = 0; // first row is 45 units ahead when RUN! appears
     this.items = emptyStock(); this.dropped = 0; this.cash = 0; this.ended = false; this.endT = 0;
     this.phase = "countdown"; this.cd = 0; this.lastN = 4;
+    this.wet = Math.random() < RAIN_CHANCE; // the sky decides, not the player
   }
 
   // ---------- input ----------
@@ -193,7 +208,10 @@ export class RunnerScene {
     this.objs.push({ kind, lane, z, used: false, seed: Math.floor(this.rng() * 1e6), ...extra });
   }
   private solid(): OKind { const r = this.rng(); return r < 0.5 ? "lastma" : r < 0.8 ? "danfo" : "okada"; }
-  private low(): OKind { return this.rng() < 0.55 ? "pothole" : "crate"; }
+  private low(): OKind {
+    const pothole = this.dirt ? (this.wet ? 0.9 : DIRT_POTHOLES) : 0.55; // dirt roads are mostly holes, and the rain fills them
+    return this.rng() < pothole ? "pothole" : "crate";
+  }
 
   /** One row of obstacles, then maybe a trail of pickups. At least one lane is always clear of solid things. */
   private spawnRow() {
@@ -284,7 +302,7 @@ export class RunnerScene {
         o.used = true;
         if (this.jumpH > CLEAR_H) { this.pop(o.lane, "Clean!", "#bfffd6", 26); continue; }
         this.stumbles++; this.slowT = SLOW_SECS; this.chase = 1; this.shake = 0.35; this.flash = 0.18;
-        this.pop(o.lane, "Stumble!", "#ffb4ab", 30); sfx.thud();
+        this.pop(o.lane, o.kind === "pothole" && this.dirt && this.wet ? "Splash!" : "Stumble!", "#ffb4ab", 30); sfx.thud();
         if (this.stumbles >= 2) { this.caught(); return; }
       } else { o.used = true; this.caught(); return; }
     }
@@ -372,7 +390,49 @@ export class RunnerScene {
     c.moveTo(xOf(xa, s0), y0); c.lineTo(xOf(xb, s0), y0); c.lineTo(xOf(xb, s1), y1); c.lineTo(xOf(xa, s1), y1); c.closePath(); c.fill();
   }
 
+  /** Untarred road: packed earth with wheel ruts and scuffed patches, no paint. Darker mud when it rains. */
+  private drawDirt() {
+    const c = this.ctx, sb = (H - HZ) / (GY - HZ), wet = this.wet;
+    const road = wet ? mix(this.market.look.road, "#2a1d12", 0.45) : this.market.look.road;
+    const edge = wet ? mix(road, "#000000", 0.12) : mix(road, "#d8b98a", 0.28);
+    // loose-earth shoulders, then the road itself
+    for (const side of [-1, 1]) this.strip(-4, this.far, side * ROAD_HALF, side * (ROAD_HALF + 34), edge);
+    c.fillStyle = road; c.beginPath(); c.moveTo(VX, HZ); c.lineTo(VX + ROAD_HALF * sb, H); c.lineTo(VX - ROAD_HALF * sb, H); c.closePath(); c.fill();
+
+    // scuffed and worn patches scroll with the road, so you can feel the speed without any paint
+    const cp = 6, k0 = Math.floor((this.dist - 4) / cp), k1 = Math.ceil((this.dist + this.far) / cp);
+    for (let k = k0; k <= k1; k++) {
+      const rel = k * cp - this.dist; if (rel < -4 || rel > this.far) continue;
+      const s = sOf(rel), y = yOf(s);
+      for (let j = 0; j < 3; j++) {
+        const h = hash(k * 11 + j * 3 + 500); if (h < 0.4) continue;
+        const x = xOf((hash(k * 13 + j * 5 + 1) - 0.5) * 2 * (ROAD_HALF - 24), s), w = (16 + hash(k * 7 + j + 9) * 44) * s;
+        c.fillStyle = h > 0.7 ? (wet ? "rgba(20,12,6,.28)" : "rgba(255,226,170,.16)") : (wet ? "rgba(255,255,255,.05)" : "rgba(60,36,18,.2)");
+        c.beginPath(); c.ellipse(x, y, w, w * 0.2, 0, 0, Math.PI * 2); c.fill();
+      }
+    }
+    // wheel ruts down every lane, broken here and there
+    const rp = 5, r0 = Math.floor((this.dist - 4) / rp), r1 = Math.ceil((this.dist + this.far) / rp);
+    for (let k = r0; k <= r1; k++) {
+      const z0 = Math.max(-4, k * rp - this.dist), z1 = Math.min(this.far, k * rp - this.dist + rp + 0.3); if (z1 <= z0) continue;
+      for (const lane of [-1, 0, 1]) for (const off of [-30, 30]) {
+        if (hash(k * 5 + lane * 3 + off) < 0.4) continue;
+        const wob = (hash(k * 3 + lane + off * 7) - 0.5) * 8, xa = lane * LANE_W + off + wob - 8, xb = xa + 16;
+        this.strip(z0, z1, xa, xb, wet ? "rgba(18,11,6,.3)" : "rgba(52,32,16,.17)");
+        if (wet) this.strip(z0, z1, xa + 5, xb - 5, "rgba(170,195,225,.12)"); // water lying in the ruts
+      }
+    }
+    // the wet shoulder holds a few puddles of its own (the road ones are the real hazards)
+    if (wet) for (let k = r0; k <= r1; k++) {
+      const rel = k * rp - this.dist; if (rel < 0 || rel > this.far || hash(k * 17 + 3) < 0.55) continue;
+      const side = hash(k * 19 + 1) < 0.5 ? -1 : 1, s = sOf(rel), x = xOf(side * (ROAD_HALF + 16), s), y = yOf(s), w = 20 * s;
+      c.fillStyle = "rgba(150,120,85,.85)"; c.beginPath(); c.ellipse(x, y, w, w * 0.22, 0, 0, Math.PI * 2); c.fill();
+      c.fillStyle = "rgba(190,210,230,.35)"; c.beginPath(); c.ellipse(x - w * 0.15, y - w * 0.04, w * 0.6, w * 0.1, 0, 0, Math.PI * 2); c.fill();
+    }
+  }
+
   private drawRoad() {
+    if (this.dirt) { this.drawDirt(); return; }
     const c = this.ctx, sb = (H - HZ) / (GY - HZ);
     c.fillStyle = this.market.look.road; c.beginPath(); c.moveTo(VX, HZ); c.lineTo(VX + ROAD_HALF * sb, H); c.lineTo(VX - ROAD_HALF * sb, H); c.closePath(); c.fill();
     // painted kerbs and lane dashes scroll with distance
@@ -387,6 +447,22 @@ export class RunnerScene {
       if (z1 < -4) continue;
       for (const bx of [-LANE_W / 2, LANE_W / 2]) this.strip(Math.max(-4, z0), Math.min(this.far, z1), bx - 3.5, bx + 3.5, "rgba(245,240,200,.85)");
     }
+    if (this.wet) this.strip(-4, this.far, -ROAD_HALF, ROAD_HALF, "rgba(140,170,215,.14)"); // wet tar shines
+  }
+
+  /** Light rain over everything, and a cool wash so the whole street looks overcast. */
+  private drawRain() {
+    const c = this.ctx, t = this.t, n = this.reduced ? 28 : 90;
+    c.fillStyle = "rgba(38,52,86,.14)"; c.fillRect(0, 0, W, H);
+    c.lineWidth = 1.3; c.lineCap = "round";
+    for (let i = 0; i < n; i++) {
+      const sp = 560 + hash(i + 300) * 240, len = 14 + hash(i + 400) * 12;
+      const y = (hash(i) * (H + 60) + t * sp) % (H + 60) - 30;
+      const x = ((hash(i + 500) * (W + 120) - t * sp * 0.2) % (W + 120) + (W + 120)) % (W + 120) - 20;
+      c.strokeStyle = `rgba(205,225,255,${0.22 + hash(i + 600) * 0.25})`;
+      c.beginPath(); c.moveTo(x, y); c.lineTo(x - len * 0.2, y + len); c.stroke();
+    }
+    c.lineCap = "butt";
   }
 
   private draw() {
@@ -394,6 +470,7 @@ export class RunnerScene {
     c.save();
     if (this.shake > 0 && !this.reduced) c.translate((Math.random() - 0.5) * 9, (Math.random() - 0.5) * 9);
     c.drawImage(this.bg, 0, 0, W, H);
+    if (this.wet && this.phase !== "idle") { c.fillStyle = "rgba(38,52,86,.3)"; c.fillRect(0, 0, W, HZ + 2); } // grey sky
     this.drawRoad();
 
     // sprites: roadside scenery, obstacles and pickups, far to near
@@ -421,6 +498,7 @@ export class RunnerScene {
 
     this.speedLines();
     this.drawChaser();
+    if (this.wet && this.phase !== "idle") this.drawRain();
     c.restore();
     if (this.flash > 0) { c.fillStyle = `rgba(228,56,47,${Math.min(0.35, this.flash * 1.4)})`; c.fillRect(0, 0, W, H); }
     if (this.level > 1) { c.fillStyle = `rgba(228,56,47,${0.05 * (this.level - 1)})`; c.fillRect(0, 0, W, H); } // the road runs hot
@@ -439,6 +517,7 @@ export class RunnerScene {
       case "danfo": this.stretched(gy, SOLID_STRETCH.danfo!, () => this.danfo(x, gy, s)); break;
       case "okada": this.stretched(gy, SOLID_STRETCH.okada!, () => this.okada(x, gy, s, o.seed)); break;
       case "pothole": {
+        if (this.dirt) { this.dirtHole(x, gy, s, o.seed); break; }
         c.fillStyle = "rgba(0,0,0,.25)"; c.beginPath(); c.ellipse(x, gy - 4 * s, 66 * s, 15 * s, 0, 0, Math.PI * 2); c.fill();
         c.fillStyle = "#0f0f13"; c.beginPath(); c.ellipse(x, gy - 6 * s, 56 * s, 11 * s, 0, 0, Math.PI * 2); c.fill();
         c.strokeStyle = "#6c6c76"; c.lineWidth = Math.max(1, 3 * s); c.beginPath(); c.ellipse(x, gy - 6 * s, 58 * s, 12 * s, 0, 0, Math.PI * 2); c.stroke();
@@ -469,6 +548,25 @@ export class RunnerScene {
       }
     }
     c.restore();
+  }
+
+  /** A hole in the dirt. Dry: a dark hollow with a crumbled rim. Wet: a pool of muddy water that ripples in the rain. */
+  private dirtHole(x: number, gy: number, s: number, seed: number) {
+    const c = this.ctx, road = this.market.look.road, wide = (62 + (seed % 5) * 4) * s, tall = 13 * s, y = gy - 6 * s;
+    c.fillStyle = "rgba(0,0,0,.18)"; c.beginPath(); c.ellipse(x, y + 2 * s, wide + 10 * s, tall + 4 * s, 0, 0, Math.PI * 2); c.fill();      // churned edge
+    if (this.wet) {
+      c.fillStyle = mix(road, "#1c120a", 0.55); c.beginPath(); c.ellipse(x, y, wide + 4 * s, tall + 2 * s, 0, 0, Math.PI * 2); c.fill();    // wet rim
+      c.fillStyle = "#8c6b45"; c.beginPath(); c.ellipse(x, y, wide - 2 * s, tall - 1 * s, 0, 0, Math.PI * 2); c.fill();                     // muddy water
+      c.fillStyle = "rgba(205,222,240,.38)"; c.beginPath(); c.ellipse(x - wide * 0.2, y - tall * 0.25, wide * 0.55, tall * 0.35, 0, 0, Math.PI * 2); c.fill(); // sky in the water
+      const ph = (this.t * 1.4 + seed * 0.37) % 1;
+      c.strokeStyle = `rgba(235,242,255,${(1 - ph) * 0.6})`; c.lineWidth = Math.max(1, 2 * s);
+      c.beginPath(); c.ellipse(x + wide * 0.25, y + tall * 0.1, wide * (0.12 + ph * 0.3), tall * (0.12 + ph * 0.3), 0, 0, Math.PI * 2); c.stroke();
+    } else {
+      c.fillStyle = mix(road, "#e0c294", 0.35); c.beginPath(); c.ellipse(x, y, wide + 3 * s, tall + 1.5 * s, 0, 0, Math.PI * 2); c.fill();   // crumbled rim
+      c.fillStyle = "#2a1a0e"; c.beginPath(); c.ellipse(x, y + 1 * s, wide - 6 * s, tall - 3 * s, 0, 0, Math.PI * 2); c.fill();             // hollow
+      c.fillStyle = "rgba(0,0,0,.35)"; c.beginPath(); c.ellipse(x, y + 3 * s, wide * 0.6, tall * 0.4, 0, 0, Math.PI * 2); c.fill();
+      for (let i = 0; i < 3; i++) dot(c, x - wide * 0.6 + hash(seed + i) * wide * 1.2, y + (hash(seed + i + 9) - 0.3) * tall, 3 * s, "#a98a62"); // loose stones
+    }
   }
 
   /** LASTMA officer, front on, arms out to block the lane. Same figure chases you when you stumble. */
@@ -621,7 +719,7 @@ export class RunnerScene {
     // cash earned so far (kept only if you make it)
     this.panel(14, 12, 190, 44);
     this.text(`₦${this.cash}`, 28, 46, 30, "#7dffa8");
-    if (this.level > 1) { this.panel(14, 62, 190, 34, "rgba(214,84,12,.92)"); this.text(`RISK x${this.level}`, 28, 88, 24, "#fff"); }
+    if (this.level > 1) { this.panel(14, 62, 190, 34, "rgba(214,84,12,.92)"); this.text(`x${this.level}`, 28, 88, 24, "#fff"); }
     // distance to the market
     const bx = W / 2 - 170, frac = clamp(this.dist / this.runDist, 0, 1);
     this.panel(bx, 12, 340, 44);
@@ -632,18 +730,17 @@ export class RunnerScene {
     this.text(`TO ${this.market.name.toUpperCase()}`, W / 2, 28, 14, "#ffffff", "center");
     // stumbles: two and you are caught
     this.panel(W - 190, 12, 176, 44);
-    this.text("STUMBLES", W - 176, 42, 16, "#ffffff");
     for (let i = 0; i < 2; i++) dot(c, W - 56 + i * 26, 34, 9, i < this.stumbles ? "#ff453a" : "rgba(255,255,255,.25)");
+    c.font = "20px sans-serif"; c.textAlign = "left"; c.fillStyle = "#fff"; c.fillText("❤", W - 176, 42);
     // what you are carrying out of the market
-    const x0 = 22, y0 = H - 54, left = Math.max(0, this.space - countStock(this.items));
+    const x0 = 22, y0 = H - 54;
     const ids = Object.keys(this.market.items) as ItemId[];
-    this.panel(x0 - 10, y0 - 4, ids.length * 66 + 130, 46);
+    this.panel(x0 - 10, y0 - 4, ids.length * 66 + 4, 46);
     ids.forEach((id, i) => {
       const x = x0 + i * 66;
       c.font = "20px sans-serif"; c.textAlign = "left"; c.fillStyle = "#fff"; c.fillText(ITEMS[id].icon, x, y0 + 26);
       this.text(`x${this.items[id]}`, x + 28, y0 + 28, 20, this.items[id] > 0 ? "#ffffff" : "#8c8c96");
     });
-    this.text(`Room ${left}`, x0 + ids.length * 66 + 4, y0 + 28, 18, left > 0 ? "#ffd84a" : "#ff8a80");
   }
 
   private drawOverlay() {
@@ -651,8 +748,7 @@ export class RunnerScene {
     if (this.phase === "idle") {
       c.fillStyle = "rgba(20,12,4,.5)"; c.fillRect(0, 0, W, H);
       this.text(this.market.name.toUpperCase(), W / 2, 210, 54, "#ffd84a", "center", W - 80);
-      this.text("Jump crates and potholes. Go round the buses, bikes and officers.", W / 2, 262, 24, "#ffffff", "center", W - 80);
-      this.text("Pay the entry fee below to start", W / 2, 306, 22, "#7dffa8", "center");
+      this.text("Pay the entry fee to start", W / 2, 270, 24, "#7dffa8", "center");
     } else if (this.phase === "countdown") {
       const n = 3 - Math.floor(this.cd / COUNTDOWN);
       const label = n > 0 ? String(n) : "GO!", k = (this.cd % COUNTDOWN) / COUNTDOWN;
@@ -660,7 +756,7 @@ export class RunnerScene {
       c.globalAlpha = 1 - k * 0.6;
       this.text(label, W / 2, 250, 120 - k * 30, "#ffffff", "center");
       c.globalAlpha = 1;
-      this.text("Left and right to change lane. Up or space to jump.", W / 2, 320, 20, "#ffffff", "center");
+      if (this.opts.tips) this.text("Swipe or tap to change lane. Tap the middle to jump.", W / 2, 320, 20, "#ffffff", "center", W - 80);
     }
   }
 }
