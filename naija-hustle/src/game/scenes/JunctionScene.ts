@@ -72,6 +72,9 @@ export class JunctionScene {
   private money: number; private stock: Stock; private storage: Stock;
   private vehs: Veh[] = []; private ambient: (VehView & { vx: number; lane: number })[] = [];
   private pops: Pop[] = [];
+  /** What you just lost. Pinned near the top and kept on screen long enough to read. */
+  private notice: { text: string; t: number; dur: number } | null = null;
+  private walkMul = 1; // 1 = a normal walk; higher when you are thrown off the road
   private nextId = 1; private t = 0; private ambT = [0.2, 0.9, 1.5];
   private redLeft = 0; private amber = false;
   // go-slow: the light is green but the cars stay stuck until the hold-up clears (holdLen seconds into the green)
@@ -222,7 +225,7 @@ export class JunctionScene {
     this.notify();
   }
 
-  private cancelAction() { this.claimV = null; this.haggle = null; this.target = null; if (this.pstate === "running" || this.pstate === "haggle" || this.pstate === "wait") this.pstate = "idle"; }
+  private cancelAction() { this.walkMul = 1; this.claimV = null; this.haggle = null; this.target = null; if (this.pstate === "running" || this.pstate === "haggle" || this.pstate === "wait") this.pstate = "idle"; }
 
   private loseRandomItem(): ItemId | null {
     const have = ITEM_IDS.filter((k) => this.stock[k] > 0);
@@ -285,7 +288,10 @@ export class JunctionScene {
       let el = Math.min(local, 16); // joined late: the cars have already pulled up, and the later ones are still rolling in
       while (el > 0) { const s = Math.min(0.05, el); this.updateTraffic(s); el -= s; }
       if (this.playing || this.demo) this.bannerT = Math.max(0.1, 4 - local);
-      if (rolled && this.playing && this.ev.kind === "lastma") for (let i = 0; i < 2; i++) this.loseRandomItem();
+      if (rolled && this.playing && this.ev.kind === "lastma") {
+        const gone = [this.loseRandomItem(), this.loseRandomItem()].filter((k): k is ItemId => !!k);
+        if (gone.length) this.alert(`LASTMA took ${gone.map((k) => ITEMS[k].name.toLowerCase()).join(" and ")}`);
+      }
       if (rolled && this.playing) this.notify();
     }
   }
@@ -340,10 +346,6 @@ export class JunctionScene {
     this.target = null;
     if (this.playing) {
       if (this.pstate === "running" || this.pstate === "haggle") this.pstate = "idle";
-      if (this.inRoad() && this.pstate !== "walk") {
-        this.pstate = "pause"; this.pauseT = Math.max(this.pauseT, 0.55); this.lockT = Math.max(this.lockT, 0.55);
-        this.pops.push({ x: this.px, y: this.py - 70, t: 0, text: "Run!", color: "#7dffa8" });
-      }
     }
   }
 
@@ -400,19 +402,20 @@ export class JunctionScene {
   private tap(ev: PointerEvent) {
     if (!this.playing) return;
     const { x, y } = this.toCanvas(ev);
-    const selling = this.phase === "red" || this.phase === "yellow";
+    const selling = this.phase !== "green" || this.holding; // the cars are stopped: red, yellow, or a go-slow hold-up
     if (selling && this.pstate === "haggle" && this.haggle) {
       const r = this.haggleRects(this.haggle.v);
       const inRect = (b: { x: number; y: number; w: number; h: number }) => x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h;
       if (inRect(r.sell)) { this.settle(false); return; }
       if (inRect(r.push)) { this.settle(true); return; }
     }
-    if (this.lockT > 0) return; // frozen by the green light, or knocked down
+    if (this.lockT > 0) return; // knocked down
     // tapping the pavement sends you back there, out of the traffic
     if (y > BOTTOM + 8) { this.retreat(x, y); return; }
-    if (!selling || this.pstate === "pause") return;
-    const v = this.pickVeh(x, y);
-    if (v) this.go(v);
+    if (this.pstate === "pause") return;
+    if (selling) { const v = this.pickVeh(x, y); if (v) { this.go(v); return; } }
+    if (y < TOP || this.pstate === "haggle" || this.pstate === "wait") return; // not the road, or you are mid-deal
+    this.stand(x, y); // tapping the road: walk there and stand your ground, even with the light green
   }
   private pickVeh(x: number, y: number): Veh | null {
     let best: Veh | null = null, bd = 1e9;
@@ -424,6 +427,13 @@ export class JunctionScene {
     return best;
   }
   private go(v: Veh) { this.target = v; this.pstate = "running"; }
+
+  /** Walk to a spot on the road and hold up there. Nothing makes you leave: at green it is up to you to run or risk it. */
+  private stand(x: number, y: number) {
+    this.cancelAction();
+    this.dest = { x: Math.min(W - 30, Math.max(30, x)), y: Math.min(BOTTOM - 6, Math.max(TOP + 20, y)) };
+    this.pstate = "walk"; this.pauseT = 0;
+  }
 
   /** Run back to the pavement, dropping whatever you were doing. */
   private retreat(x: number, y = HOME_Y) {
@@ -509,6 +519,7 @@ export class JunctionScene {
     }
     for (const p of this.pops) p.t += dt;
     this.pops = this.pops.filter((p) => p.t < 1.1);
+    if (this.notice && (this.notice.t += dt) >= this.notice.dur) this.notice = null;
     this.inv -= dt; this.lockT -= dt;
     this.syncLight();
     if (this.phase === "green") { this.greenT += dt; if (this.holding) this.updateJam(); }
@@ -589,11 +600,7 @@ export class JunctionScene {
       if ((this.claimT -= dt) <= 0 && this.claimV) { const v = this.claimV; this.claimV = null; this.reallyArrive(v); }
     } else if (this.pstate === "pause") {
       this.pauseT -= dt;
-      // if the light changed while you were being turned down, get off the road
-      if (this.pauseT <= 0) {
-        if (this.danger() && this.inRoad()) { this.dest = { x: this.px, y: HOME_Y }; this.pstate = "walk"; }
-        else this.pstate = "idle";
-      }
+      if (this.pauseT <= 0) this.pstate = "idle"; // you stay where you are: run back or risk it
     } else if (this.pstate === "running" && this.target) {
       const v = this.target;
       if (v.st !== "stopped" || v.done || v.taken) { if (v.taken && !v.done) this.say(v, "Too late!", "#cfcfd6"); this.target = null; this.pstate = "idle"; }
@@ -608,8 +615,8 @@ export class JunctionScene {
       if (this.haggle.t >= this.haggle.dur && !this.demo) this.settle(false); // be nice: no answer means you take the offer
     } else if (this.pstate === "walk") {
       const d = Math.hypot(this.dest.x - this.px, this.dest.y - this.py);
-      if (d < 5) this.pstate = "idle";
-      else { const s = Math.min(d, PLAYER_SPEED * 1.15 * dt); this.px += ((this.dest.x - this.px) / d) * s; this.py += ((this.dest.y - this.py) / d) * s; }
+      if (d < 5) { this.pstate = "idle"; this.walkMul = 1; }
+      else { const s = Math.min(d, PLAYER_SPEED * 1.15 * this.walkMul * dt); this.px += ((this.dest.x - this.px) / d) * s; this.py += ((this.dest.y - this.py) / d) * s; }
     }
     // green light danger: a moving car hits you
     if (this.inv <= 0 && this.inRoad()) {
@@ -620,12 +627,17 @@ export class JunctionScene {
     }
   }
 
+  /** A loss notice: pinned near the top for a few seconds so there is time to read it. */
+  private alert(text: string) { this.notice = { text, t: 0, dur: 5 }; }
+
   private hit() {
     const loss = Math.min(this.money, 50); this.money -= loss; this.opts.sync?.hit();
     const lost = this.loseRandomItem();
     this.cur.hits++; this.cur.earned -= loss; this.streak = 0; sfx.hit(this.px);
-    this.pops.push({ x: this.px, y: this.py - 80, t: 0, text: `Ouch! -${naira(loss)}${lost ? ` and ${ITEMS[lost].name.toLowerCase()}` : ""}`, color: "#ff8a80" });
-    this.pstate = "pause"; this.pauseT = 1; this.lockT = 1; this.inv = 1.6; this.haggle = null; this.target = null; this.py = HOME_Y;
+    this.pops.push({ x: this.px, y: this.py - 80, t: 0, text: "Ouch!", color: "#ff8a80" });
+    this.alert(`HIT! You lost ${naira(loss)}${lost ? ` and 1 ${ITEMS[lost].name.toLowerCase()}` : ""}`);
+    this.cancelAction(); // thrown off the road onto the pavement, too fast to steer
+    this.pstate = "walk"; this.dest = { x: this.px, y: HOME_Y }; this.walkMul = 4; this.pauseT = 0; this.lockT = 1; this.inv = 1.6;
     this.notify();
   }
 
@@ -727,6 +739,13 @@ export class JunctionScene {
       this.text(p.text, p.x, p.y - p.t * 34, 20, p.color, "center");
     }
     this.ctx.globalAlpha = 1;
+    if (this.notice) {
+      const n = this.notice, w = 480;
+      this.ctx.globalAlpha = Math.min(1, (n.dur - n.t) / 0.8);
+      this.panel(W / 2 - w / 2, 66, w, 44, "rgba(200,40,30,.96)");
+      this.text(n.text.toUpperCase(), W / 2, 98, 22, "#ffffff", "center");
+      this.ctx.globalAlpha = 1;
+    }
   }
 
   private drawHaggle(h: Haggle) {
@@ -753,8 +772,8 @@ export class JunctionScene {
 
   private drawHud() {
     const c = this.ctx;
-    // money (hidden while the homepage is just watching other players)
-    if (this.botOn() || !this.demo) { this.panel(14, 12, 208, 44); this.text(naira(this.money), 28, 46, 30, "#ffd84a"); }
+    // money: the play screen shows it in the dock, so only the homepage bot's canvas keeps it
+    if (this.demo && this.botOn()) { this.panel(14, 12, 208, 44); this.text(naira(this.money), 28, 46, 30, "#ffd84a"); }
     // who is on this road: a small tag in the bottom corner, so it never covers the traffic light
     if (this.net && this.roomId) {
       const n = this.peers.size + (this.playing && !this.demo ? 1 : 0);
@@ -767,7 +786,7 @@ export class JunctionScene {
     if (this.phase === "red") this.text("RED LIGHT: SELL!", W / 2, 42, 22, "#ffffff", "center");
     else if (this.phase === "yellow") this.text("GET READY TO RUN!", W / 2, 42, 22, "#ffd84a", "center");
     else if (this.holding) this.text(this.demo ? "GO-SLOW! CARS STUCK" : "GO-SLOW! RISK IT", W / 2, 42, 22, "#ffb347", "center");
-    else this.text(this.playing || this.demo ? "GREEN! GET OFF THE ROAD" : "GREEN LIGHT", W / 2, 42, 22, "#5cff9a", "center");
+    else this.text(this.demo ? "GREEN! GET OFF THE ROAD" : this.playing ? "GREEN! RUN OR RISK IT" : "GREEN LIGHT", W / 2, 42, 22, "#5cff9a", "center");
     // event banner at the start of a red, or how the last red went. Sits under the billboards.
     if (this.ev && this.bannerT > 0 && (this.phase === "red" || this.phase === "yellow")) {
       const e = this.ev, w = 440;
@@ -786,19 +805,22 @@ export class JunctionScene {
     }
     if (!this.playing) return;
 
-    // tray: the total first, then what is left of each item
-    const total = countStock(this.stock), y0 = H - 56, pulse = this.stockPulse > 0 && Math.floor(this.t * 14) % 2 === 0;
-    // the everyday four always show; market-only goods show while you are carrying them. Slides left to leave room for the streak badge.
-    const shown = ITEM_IDS.filter((id) => CORE_ITEMS.includes(id) || this.stock[id] > 0);
-    const pw = shown.length * 66 + 112, left = Math.max(14, Math.min(208, 750 - pw)), x0 = left + 92;
-    this.panel(left, y0 - 4, pw, 50, total === 0 ? "rgba(160,30,24,.92)" : "rgba(27,27,34,.88)");
-    c.font = "bold 10px sans-serif"; c.textAlign = "left"; c.fillStyle = "rgba(255,255,255,.7)"; c.fillText("ON TRAY", x0 - 80, y0 + 12);
-    this.text(total === 0 ? "EMPTY" : `${total}`, x0 - 80, y0 + 38, total === 0 ? 20 : 28, pulse ? "#ff9f43" : "#ffd84a");
-    shown.forEach((id, i) => {
-      const x = x0 + i * 66;
-      c.font = "20px sans-serif"; c.textAlign = "left"; c.fillStyle = "#fff"; c.fillText(ITEMS[id].icon, x, y0 + 28);
-      this.text(`x${this.stock[id]}`, x + 28, y0 + 30, 20, this.stock[id] > 0 ? "#ffffff" : "#8c8c96");
-    });
+    // tray: shown in the dock on the play screen; the homepage bot keeps the canvas version
+    const total = countStock(this.stock);
+    if (this.demo) {
+      const y0 = H - 56, pulse = this.stockPulse > 0 && Math.floor(this.t * 14) % 2 === 0;
+      // the everyday four always show; market-only goods show while you are carrying them. Slides left to leave room for the streak badge.
+      const shown = ITEM_IDS.filter((id) => CORE_ITEMS.includes(id) || this.stock[id] > 0);
+      const pw = shown.length * 66 + 112, left = Math.max(14, Math.min(208, 750 - pw)), x0 = left + 92;
+      this.panel(left, y0 - 4, pw, 50, total === 0 ? "rgba(160,30,24,.92)" : "rgba(27,27,34,.88)");
+      c.font = "bold 10px sans-serif"; c.textAlign = "left"; c.fillStyle = "rgba(255,255,255,.7)"; c.fillText("ON TRAY", x0 - 80, y0 + 12);
+      this.text(total === 0 ? "EMPTY" : `${total}`, x0 - 80, y0 + 38, total === 0 ? 20 : 28, pulse ? "#ff9f43" : "#ffd84a");
+      shown.forEach((id, i) => {
+        const x = x0 + i * 66;
+        c.font = "20px sans-serif"; c.textAlign = "left"; c.fillStyle = "#fff"; c.fillText(ITEMS[id].icon, x, y0 + 28);
+        this.text(`x${this.stock[id]}`, x + 28, y0 + 30, 20, this.stock[id] > 0 ? "#ffffff" : "#8c8c96");
+      });
+    }
     if (total === 0) { this.text("TRAY EMPTY. LEAVE TO RESTOCK", W / 2, 206, 24, "#ffd84a", "center"); }
     // streak
     if (this.streak >= 2 && (this.phase === "red" || this.phase === "yellow")) {
@@ -806,8 +828,8 @@ export class JunctionScene {
       this.text(`${this.streak} IN A ROW  +${Math.round(this.bonus() * 100)}%`, W - 106, H - 54, 20, "#fff", "center");
     }
     // the way out, shown while you are in the road
-    if (this.inRoad() && this.phase === "yellow" && Math.floor(this.t * 3) % 2 === 0) {
-      this.text("TAP THE PAVEMENT TO RUN BACK", W / 2, BOTTOM + 34, 22, "#ffd84a", "center");
+    if (this.inRoad() && (this.phase === "yellow" || this.danger()) && Math.floor(this.t * 3) % 2 === 0) {
+      this.text(this.phase === "yellow" ? "TAP THE PAVEMENT TO RUN BACK" : "CARS DEY MOVE! TAP THE PAVEMENT TO RUN", W / 2, BOTTOM + 34, 22, "#ffd84a", "center");
     }
   }
 }
