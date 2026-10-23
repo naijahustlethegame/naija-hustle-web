@@ -5,7 +5,7 @@ import { loadAvatar, type Pot, type SaveData } from "@/lib/storage";
 import { ApiError, api, loadPlayer, toPot } from "@/lib/api";
 import { ITEMS, ITEM_IDS, STORAGE_CAP, countStock, emptyStock, naira } from "@/game/engine/items";
 import { JUNCTIONS, type JunctionId } from "@/game/engine/junctions";
-import { lockedAt, marketFor, packFor, starterUnlocks, type Unlocks } from "@/game/engine/progression";
+import { junctionForItem, lockedAt, marketFor, starterUnlocks, type Unlocks } from "@/game/engine/progression";
 import { feeRange, fineFor, marketById, marketsFor, rollMarket, type Market } from "@/game/engine/markets";
 import type { ItemId, Stock } from "@/game/engine/types";
 import { LEVEL_NAME, MAX_LEVEL, type RunResult, type RunnerScene } from "@/game/scenes/RunnerScene";
@@ -210,8 +210,8 @@ export default function RunnerView() {
           </p>
           {lockedHere.length > 0 && (
             <p className="note" role="note">
-              Locked here: {lockedHere.map((id) => `${ITEMS[id].icon} ${ITEMS[id].name} (${packFor(id)?.name ?? "locked"})`).join(", ")}.
-              You will not pick these up until you unlock them on the junction page.
+              Locked here: {lockedHere.map((id) => `${ITEMS[id].icon} ${ITEMS[id].name} (unlock ${JUNCTIONS[junctionForItem(id)].name})`).join(", ")}.
+              You will not pick these up until you unlock that junction on the junction page.
             </p>
           )}
           <div className="btns">

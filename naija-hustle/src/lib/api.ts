@@ -1,6 +1,6 @@
 import { loadAvatar, type HiredSeller, type Pot, type SaveData } from "@/lib/storage";
 import { emptyStock } from "@/game/engine/items";
-import { STARTER_ITEMS, STARTER_JUNCTIONS, type ItemPackId, type Unlocks } from "@/game/engine/progression";
+import { STARTER_ITEMS, STARTER_JUNCTIONS, type Unlocks } from "@/game/engine/progression";
 import type { ItemId } from "@/game/engine/types";
 import type { Stock } from "@/game/engine/types";
 import type { JunctionId } from "@/game/engine/junctions";
@@ -52,8 +52,8 @@ export const api = {
   finish: (items: Stock, cash: number) => call<{ pot: RawPot }>("/runs/finish", "POST", { items, cash: Math.floor(cash) }),
   fail: () => call<{ money: number }>("/runs/fail", "POST"),
   bank: async () => { const b = await call<{ money: number; storage: Partial<Stock> }>("/runs/bank", "POST"); return { money: Number(b.money), storage: toStock(b.storage) }; },
-  unlockJunction: (id: JunctionId) => call<{ money: number; junctions: JunctionId[] }>("/unlocks/junction", "POST", { id }),
-  unlockPack: (id: ItemPackId) => call<{ money: number; items: ItemId[] }>("/unlocks/pack", "POST", { id }),
+  /** Buying a junction also unlocks the items sold there. */
+  unlockJunction: (id: JunctionId) => call<{ money: number; junctions: JunctionId[]; items: ItemId[] }>("/unlocks/junction", "POST", { id }),
   hire: (id: string) => call<{ money: number }>("/sellers/hire", "POST", { id }),
   collect: () => call<{ collected: number; money: number }>("/sellers/collect", "POST"),
 };

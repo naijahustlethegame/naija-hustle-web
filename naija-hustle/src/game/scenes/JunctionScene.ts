@@ -742,11 +742,11 @@ export class JunctionScene {
     const c = this.ctx;
     // money (hidden while the homepage is just watching other players)
     if (this.botOn() || !this.demo) { this.panel(14, 12, 208, 44); this.text(naira(this.money), 28, 46, 30, "#ffd84a"); }
-    // who is on this road
+    // who is on this road: a small tag in the bottom corner, so it never covers the traffic light
     if (this.net && this.roomId) {
       const n = this.peers.size + (this.playing && !this.demo ? 1 : 0);
-      this.panel(W - 214, 12, 200, 44);
-      this.text(`${n} / ${this.cap} HUSTLERS`, W - 114, 42, 22, n >= this.cap ? "#ff9f43" : "#7dffa8", "center");
+      this.panel(W - 130, H - 28, 116, 20, "rgba(27,27,34,.72)");
+      this.text(`${n} / ${this.cap} HUSTLERS`, W - 72, H - 12, 14, n >= this.cap ? "#ff9f43" : "#7dffa8", "center");
     }
     // light status. No countdowns: watch the traffic light.
     const tx = W / 2 - 160;
@@ -789,8 +789,8 @@ export class JunctionScene {
     if (total === 0) { this.text("TRAY EMPTY. LEAVE TO RESTOCK", W / 2, 206, 24, "#ffd84a", "center"); }
     // streak
     if (this.streak >= 2 && (this.phase === "red" || this.phase === "yellow")) {
-      this.panel(W - 196, H - 58, 180, 44, "rgba(232,89,12,.95)");
-      this.text(`${this.streak} IN A ROW  +${Math.round(this.bonus() * 100)}%`, W - 106, H - 28, 20, "#fff", "center");
+      this.panel(W - 196, H - 84, 180, 44, "rgba(232,89,12,.95)"); // sits above the hustler tag in the corner
+      this.text(`${this.streak} IN A ROW  +${Math.round(this.bonus() * 100)}%`, W - 106, H - 54, 20, "#fff", "center");
     }
     // the way out, shown while you are in the road
     if (this.inRoad() && this.phase === "yellow" && Math.floor(this.t * 3) % 2 === 0) {

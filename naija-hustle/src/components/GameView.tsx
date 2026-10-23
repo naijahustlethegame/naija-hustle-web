@@ -4,12 +4,12 @@ import { useEffect, useRef, useState } from "react";
 import { loadAvatar } from "@/lib/storage";
 import { api, loadPlayer } from "@/lib/api";
 import { Sync } from "@/lib/sync";
-import { hasJunction, junctionUnlock, starterUnlocks, type Unlocks } from "@/game/engine/progression";
+import { JUNCTION_ITEMS, hasItem, hasJunction, junctionForItem, starterUnlocks, type Unlocks } from "@/game/engine/progression";
 import type { SaveData } from "@/lib/storage";
-import UnlockShop from "./UnlockShop";
+import LockedJunction from "./LockedJunction";
 
-import { CAPACITY, CORE_ITEMS, ITEMS, ITEM_IDS, countStock, naira } from "@/game/engine/items";
-import { JUNCTION_LIST } from "@/game/engine/junctions";
+import { CAPACITY, ITEMS, ITEM_IDS, countStock, naira } from "@/game/engine/items";
+import { JUNCTIONS, JUNCTION_LIST, type Junction } from "@/game/engine/junctions";
 import { feeRange, marketsFor } from "@/game/engine/markets";
 import type { JunctionScene, Snapshot } from "@/game/scenes/JunctionScene";
 import SoundToggle from "./SoundToggle";
@@ -71,6 +71,7 @@ export default function GameView({ demo = false }: { demo?: boolean }) {
 }
 
 function Controls({ scene, snap, unlocks, beforeBuy, onBought }: { scene: JunctionScene; snap: Snapshot; unlocks: Unlocks; beforeBuy: () => Promise<void>; onBought: (s: SaveData) => void }) {
+  const [notice, setNotice] = useState("");
   if (snap.playing) {
     return (
       <section className="panel" aria-label="On the road">
@@ -107,12 +108,11 @@ function Controls({ scene, snap, unlocks, beforeBuy, onBought }: { scene: Juncti
       </div>
       <div className="picker" role="radiogroup" aria-label="Junction">
         {JUNCTION_LIST.map((j) => !hasJunction(unlocks, j.id) ? (
-          <div key={j.id} className="pick locked" aria-label={`${j.name}, locked`}>
-            <strong>🔒 {j.name}</strong>
-            <span>{j.blurb}</span>
-            <span className="meta">Red light: about {j.red} seconds</span>
-            <span className="meta">Costs {naira(junctionUnlock(j.id)?.price ?? 0)} to unlock. See Unlock more below.</span>
-          </div>
+          <LockedJunction key={j.id} junction={j} money={snap.money} unlocks={unlocks} beforeBuy={beforeBuy}
+            onBought={(s: SaveData, jn: Junction) => {
+              onBought(s);
+              if (hasJunction(s.unlocks, jn.id)) setNotice(`${jn.name} unlocked! You can now stock ${JUNCTION_ITEMS[jn.id].map((i) => ITEMS[i].name).join(" and ")}.`);
+            }} />
         ) : (
           <button key={j.id} role="radio" aria-checked={snap.junction === j.id} className="pick"
             onClick={() => scene.selectJunction(j.id)}>
@@ -124,7 +124,7 @@ function Controls({ scene, snap, unlocks, beforeBuy, onBought }: { scene: Juncti
           </button>
         ))}
       </div>
-      <UnlockShop money={snap.money} unlocks={unlocks} beforeBuy={beforeBuy} onBought={onBought} />
+      {notice && <p className="banked" role="status">{notice}</p>}
 
       <div className="panel-head">
         <h2>Load your tray</h2>
@@ -135,7 +135,16 @@ function Controls({ scene, snap, unlocks, beforeBuy, onBought }: { scene: Juncti
         {athome === 0 && snap.carrying === 0 ? " Nothing left! Run to the market to get more." : ""}
       </p>
       <ul className="shop">
-        {ITEM_IDS.filter((id) => CORE_ITEMS.includes(id) || snap.storage[id] + snap.stock[id] > 0).map((id) => (
+        {ITEM_IDS.map((id) => !hasItem(unlocks, id) ? (
+          <li key={id} className="locked" aria-label={`${ITEMS[id].name}, locked`}>
+            <span className="icon" aria-hidden>{ITEMS[id].icon}</span>
+            <span className="what">
+              <strong>{ITEMS[id].name}</strong>
+              <small>Sells for about {naira(ITEMS[id].price)}</small>
+            </span>
+            <span className="lock-tag">🔒 Unlock {JUNCTIONS[junctionForItem(id)].name}</span>
+          </li>
+        ) : (
           <li key={id}>
             <span className="icon" aria-hidden>{ITEMS[id].icon}</span>
             <span className="what"><strong>{ITEMS[id].name}</strong><small>At home: {snap.storage[id]}. Sells for about {naira(ITEMS[id].price)}</small></span>
