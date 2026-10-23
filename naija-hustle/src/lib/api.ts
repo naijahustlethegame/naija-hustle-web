@@ -58,10 +58,13 @@ export const api = {
   collect: () => call<{ collected: number; money: number }>("/sellers/collect", "POST"),
 };
 
-export type Row = { name: string; score: number };
+/** Leaderboard: ranked by money in hand. The top list is public; `me` and `setName` need the player's session. */
+export type Row = { name: string; money: number };
+export type Me = { name: string; money: number; rank: number | null };
 export async function getTop(): Promise<Row[]> {
   const r = await fetch(`${API}/leaderboard`, { cache: "no-store" });
   if (!r.ok) throw new Error("fail");
-  return (await r.json()).top;
+  return ((await r.json()).top as { name: string; money: number | string }[]).map((x) => ({ name: x.name, money: Number(x.money) }));
 }
-export const submitScore = async (name: string, score: number): Promise<Row[]> => (await call<{ top: Row[] }>("/leaderboard", "POST", { name, score })).top;
+export const getMe = async (): Promise<Me> => { const m = await call<Me>("/leaderboard/me"); return { ...m, money: Number(m.money) }; };
+export const setName = async (name: string): Promise<string> => (await call<{ name: string }>("/leaderboard/name", "POST", { name })).name;

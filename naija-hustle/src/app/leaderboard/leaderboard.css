@@ -1,0 +1,18 @@
+.rank { list-style: none; padding: 0; margin: 14px 0 0; }
+.rank li { display: grid; grid-template-columns: 3rem 1fr auto; gap: 12px; align-items: center; padding: 10px 8px; border-bottom: 3px dashed var(--tar); }
+.rank li:last-child { border-bottom: 0; }
+.rank .pos { font-family: var(--display); font-size: 1.5rem; text-align: center; }
+.rank .nm { font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rank .cash { font-family: var(--display); font-size: 1.4rem; }
+.rank li:nth-child(-n + 3) .nm { font-size: 1.15rem; }
+.rank li.me { background: var(--danfo); border-radius: 12px; border-bottom-color: transparent; }
+
+.you { margin-top: 10px; }
+.you.far { padding: 10px 12px; border: 3px solid var(--tar); border-radius: 12px; background: var(--danfo); }
+.link { font: inherit; font-weight: 700; text-decoration: underline; background: none; border: 0; padding: 0; cursor: pointer; color: inherit; }
+
+.namer { margin-top: 12px; }
+.namer label { font-weight: 700; display: block; margin-bottom: 6px; }
+.namer-row { display: flex; gap: 10px; flex-wrap: wrap; }
+.namer input { flex: 1 1 14rem; min-width: 0; padding: 12px 14px; border: 3px solid var(--tar); border-radius: 12px; font: 700 1.05rem var(--body); }
+.namer .btn { padding: 10px 22px; }

@@ -1,5 +1,7 @@
 import type { RoundEventKind } from "./events";
+import type { JunctionId } from "./junctions";
 import { BOTTOM, TOP } from "./layout";
+import { WET_GROW, isDirt, spotY, spotsFor } from "./road";
 import { H, W } from "./types";
 
 type Ctx = CanvasRenderingContext2D;
@@ -23,6 +25,27 @@ export function drawWeatherTint(c: Ctx, kind: RoundEventKind, k: number) {
   } else if (kind === "sun") {
     c.fillStyle = `rgba(255,205,90,${0.16 * k})`; c.fillRect(0, 0, W, H);
   }
+}
+
+/**
+ * Rain on the road itself, drawn under the cars so they drive through it. Holes fill with water, and a dirt road turns
+ * to mud with extra puddles. Fades in with the rain (`k`, 0 to 1).
+ */
+export function drawRoadWater(c: Ctx, jid: JunctionId, t: number, k: number) {
+  if (k <= 0) return;
+  const dirt = isDirt(jid);
+  if (dirt) { c.fillStyle = `rgba(48,30,16,${0.34 * k})`; c.fillRect(0, TOP, W, BOTTOM - TOP); } // wet earth is darker
+  spotsFor(jid, true).forEach((s, i) => {
+    const x = s.x, y = spotY(s.lane), grow = WET_GROW * (0.55 + 0.45 * k), rx = s.rx * grow, ry = s.ry * grow;
+    c.globalAlpha = k;
+    c.fillStyle = dirt ? "#3a2616" : "#25272e"; c.beginPath(); c.ellipse(x, y, rx + 4, ry + 2, 0, 0, Math.PI * 2); c.fill();        // wet rim
+    c.fillStyle = dirt ? "#8a6a46" : "#566a80"; c.beginPath(); c.ellipse(x, y, rx, ry, 0, 0, Math.PI * 2); c.fill();                 // muddy water
+    c.fillStyle = "rgba(205,222,240,.35)"; c.beginPath(); c.ellipse(x - rx * 0.2, y - ry * 0.25, rx * 0.55, ry * 0.35, 0, 0, Math.PI * 2); c.fill(); // sky in the water
+    const ph = (t * 1.3 + hash(i + 700)) % 1;
+    c.strokeStyle = `rgba(235,242,255,${(1 - ph) * 0.6})`; c.lineWidth = 1.5;
+    c.beginPath(); c.ellipse(x + rx * 0.2, y, rx * (0.1 + ph * 0.3), ry * (0.1 + ph * 0.3), 0, 0, Math.PI * 2); c.stroke();
+  });
+  c.globalAlpha = 1;
 }
 
 const SUN = { x: 800, y: 30 };

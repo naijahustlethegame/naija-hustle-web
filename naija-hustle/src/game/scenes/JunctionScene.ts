@@ -1,7 +1,8 @@
 import { sfx } from "../audio/sfx";
 import { drawAvatar, type AvatarConfig } from "../avatar/avatar";
 import { NO_LINES, PUSH_FAIL_LINES, SPEC, YES_LINES, makeBuyer, pickColor, pickKind } from "../engine/buyers";
-import { OFFICER_SPOTS, drawOfficer, drawWeatherFront, drawWeatherTint } from "../engine/weather";
+import { OFFICER_SPOTS, drawOfficer, drawRoadWater, drawWeatherFront, drawWeatherTint } from "../engine/weather";
+import { roadEffect } from "../engine/road";
 import { WARN, cycleLength, lightAt, redFor, type LightPhase } from "../engine/clock";
 import { drawLight, drawVehicle, renderBackdrop, type VehView } from "../engine/draw";
 import { GOSLOW, rollRoundEvent, type RoundEvent } from "../engine/events";
@@ -541,7 +542,7 @@ export class JunctionScene {
         this.ambT[i] = this.amber ? rand(0.35, 0.8) : rand(0.9, 2.2) / j.flow;
       });
     }
-    for (const a of this.ambient) a.x += a.vx * dt;
+    for (const a of this.ambient) a.x += a.vx * this.roadK(a.lane, a.x, a.id, a.kind) * dt;
     // keep a gap: nobody drives through the car in front
     for (let i = 0; i < LANE_Y.length; i++) {
       const row = this.ambient.filter((a) => a.lane === i).sort((a, b) => b.x - a.x);
@@ -553,11 +554,22 @@ export class JunctionScene {
     this.ambient = this.ambient.filter((a) => a.x < W + 120);
   }
 
+  /** Rain is on for the rest of the light cycle once the die says so. */
+  private get raining() { return this.ev?.kind === "rain"; }
+  /** Speed scale for a vehicle on this road: dirt, potholes and puddles slow it down. */
+  private roadK(lane: number, x: number, id: number, kind: VehView["kind"]) { return roadEffect(this.jid, this.raining, lane, x, id, kind).k; }
+  /** Draw a moving vehicle, jolting up and down as it bumps over a hole. */
+  private paintMoving(v: VehView & { lane: number }, moving: boolean) {
+    const c = this.ctx, bump = moving ? roadEffect(this.jid, this.raining, v.lane, v.x, v.id, v.kind).bump : 0;
+    if (bump <= 0) { drawVehicle(c, v); return; }
+    c.save(); c.translate(0, -bump * Math.abs(Math.sin(this.t * 22))); drawVehicle(c, v); c.restore();
+  }
+
   private updateTraffic(dt: number) {
     for (const v of this.vehs) {
       if (v.st === "arriving") {
         const sp = Math.min(330, (v.slotX - v.x) * 2.4 + 30);
-        let nx = v.x + sp * dt;
+        let nx = v.x + sp * this.roadK(v.lane, v.x, v.id, v.kind) * dt;
         if (v.leader) nx = Math.min(nx, v.leader.x - v.leader.w / 2 - v.w / 2 - 10);
         if (v.slotX - nx < 1.2) { nx = v.slotX; v.st = "stopped"; }
         v.x = nx;
@@ -566,7 +578,7 @@ export class JunctionScene {
         if (v.launchIn <= 0) { v.st = "leaving"; v.vx = 30; if (v.kind !== "car" || Math.random() < 0.5) sfx.rev(v.kind, v.x); }
       } else if (v.st === "leaving") {
         v.vx = Math.min(430, v.vx + 360 * dt);
-        v.x += v.vx * dt;
+        v.x += v.vx * this.roadK(v.lane, v.x, v.id, v.kind) * dt;
       }
     }
     this.vehs = this.vehs.filter((v) => v.x - v.w / 2 < W + 40);
@@ -662,12 +674,13 @@ export class JunctionScene {
     c.drawImage(this.bg(), 0, 0, W, H);
     const wk = this.ev ? Math.min(1, this.evT / 1.2) : 0, wkind = this.ev?.kind ?? "normal";
     drawWeatherTint(c, wkind, wk);
+    if (wkind === "rain") drawRoadWater(c, this.jid, this.t, wk);
     drawLight(c, this.phase === "green" && this.amber ? "yellow" : this.phase, this.t);
 
     type D = { key: number; paint: () => void };
     const items: D[] = [];
-    for (const a of this.ambient) items.push({ key: groundOf(a), paint: () => drawVehicle(c, a) });
-    for (const v of this.vehs) items.push({ key: groundOf(v), paint: () => drawVehicle(c, v) });
+    for (const a of this.ambient) items.push({ key: groundOf(a), paint: () => this.paintMoving(a, true) });
+    for (const v of this.vehs) items.push({ key: groundOf(v), paint: () => this.paintMoving(v, v.st !== "stopped") });
     for (const q of this.peers.values()) items.push({ key: q.y + 14, paint: () => this.drawPeer(q) });
     if (this.playing && (!this.demo || this.botOn())) items.push({ key: this.py + 14, paint: () => this.drawPlayer() });
     if (wkind === "lastma") for (const o of OFFICER_SPOTS) items.push({ key: o.y, paint: () => drawOfficer(c, o.x, o.y, this.t, o.id, wk) });

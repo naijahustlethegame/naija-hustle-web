@@ -1,7 +1,8 @@
 import type { Junction } from "./junctions";
-import { AD_SLOTS, BOTTOM, DISPLAY_FONT, STOP_X, TOP, type AdSlotId } from "./layout";
+import { AD_SLOTS, BOTTOM, DISPLAY_FONT, LANE_Y, STOP_X, TOP, type AdSlotId } from "./layout";
 import { H, W } from "./types";
 import { hashString, mulberry32 } from "./rng";
+import { holesOf, spotY } from "./road";
 
 const INK = "#1b1b22";
 type Ctx = CanvasRenderingContext2D;
@@ -170,12 +171,49 @@ function tollBooth(c: Ctx, x: number, y: number) {
   c.fillStyle = "#4a4d55"; c.fillRect(x + 48, y - 28, 4, 34);
 }
 
+// ---------------------------------------------------------------- rough roads
+/** Where the dirt road meets the pavement: a ragged line of crumbs instead of a painted kerb. `dir` -1 = top edge, 1 = bottom edge. */
+function crumbledEdge(c: Ctx, y: number, rnd: () => number, dir: 1 | -1) {
+  c.fillStyle = "#8b6742"; c.fillRect(0, y, W, 6);
+  for (let x = 0; x < W; x += 9) {
+    const h = 2 + rnd() * 7, w = 7 + rnd() * 12;
+    c.fillStyle = rnd() > 0.5 ? "#7a5a38" : "#a98458";
+    c.beginPath(); c.ellipse(x + w / 2, dir < 0 ? y + 6 - h / 2 : y + h / 2, w / 2, h / 2, 0, 0, Math.PI * 2); c.fill();
+  }
+}
+
+/** Packed earth: scuffed patches, loose stones, and a pair of wheel ruts down every lane. */
+function dirtRoad(c: Ctx, rnd: () => number) {
+  for (let i = 0; i < 70; i++) { // worn and dusty patches
+    const x = rnd() * W, y = TOP + 6 + rnd() * (BOTTOM - TOP - 12), rx = 20 + rnd() * 60;
+    c.fillStyle = rnd() > 0.5 ? "rgba(255,226,170,.10)" : "rgba(50,30,14,.14)";
+    c.beginPath(); c.ellipse(x, y, rx, rx * 0.16, 0, 0, Math.PI * 2); c.fill();
+  }
+  for (const ly of LANE_Y) for (const off of [9, 29]) { // wheel ruts, broken here and there
+    for (let x = 0; x < STOP_X; ) {
+      const len = 40 + rnd() * 120, gap = 6 + rnd() * 40, wob = (rnd() - 0.5) * 3;
+      c.fillStyle = "rgba(48,28,12,.2)"; c.beginPath(); c.ellipse(x + len / 2, ly + off + wob, len / 2, 3.2, 0, 0, Math.PI * 2); c.fill();
+      x += len + gap;
+    }
+  }
+  for (let i = 0; i < 160; i++) { c.fillStyle = rnd() > 0.5 ? "#a98a62" : "#5e4429"; c.fillRect(rnd() * W, TOP + 4 + rnd() * (BOTTOM - TOP - 8), 2 + rnd() * 3, 2 + rnd() * 2); } // stones
+}
+
+/** A hole, seen dry. On dirt: a dark hollow with a crumbled rim. On tar: a black patch with a broken edge. */
+function pothole(c: Ctx, x: number, y: number, rx: number, ry: number, dirt: boolean) {
+  c.fillStyle = "rgba(0,0,0,.16)"; c.beginPath(); c.ellipse(x, y + 2, rx + 8, ry + 4, 0, 0, Math.PI * 2); c.fill();
+  c.fillStyle = dirt ? "#c2a173" : "#5a5c64"; c.beginPath(); c.ellipse(x, y, rx + 3, ry + 2, 0, 0, Math.PI * 2); c.fill();
+  c.fillStyle = dirt ? "#2a1a0e" : "#101014"; c.beginPath(); c.ellipse(x, y + 1, rx - 4, ry - 2, 0, 0, Math.PI * 2); c.fill();
+  c.fillStyle = "rgba(0,0,0,.35)"; c.beginPath(); c.ellipse(x, y + 3, rx * 0.6, ry * 0.4, 0, 0, Math.PI * 2); c.fill();
+}
+
 // ---------------------------------------------------------------- backdrop
 /** Static scenery, drawn once per junction. Each junction has its own sky, buildings, road and pavement furniture. */
 export function renderBackdrop(j: Junction, ads: AdImages = {}): HTMLCanvasElement {
   const o = document.createElement("canvas"); o.width = W; o.height = H;
   const c = o.getContext("2d")!;
   const rnd = mulberry32(hashString(j.id));
+  const dirt = j.surface === "dirt";
 
   if (j.id === "ojuelegba") ojuelegbaSky(c, rnd);
   else if (j.id === "obalende") obalendeSky(c, rnd);
@@ -186,29 +224,31 @@ export function renderBackdrop(j: Junction, ads: AdImages = {}): HTMLCanvasEleme
   // top pavement and painted kerb
   c.fillStyle = j.pavement; c.fillRect(0, 140, W, TOP - 140);
   c.fillStyle = "rgba(0,0,0,.08)"; c.fillRect(0, 140, W, 3);
-  c.fillStyle = "#f2c200"; c.fillRect(0, TOP - 6, W, 6); c.fillStyle = INK; for (let x = 0; x < W; x += 36) c.fillRect(x, TOP - 6, 18, 6);
+  if (dirt) crumbledEdge(c, TOP - 6, rnd, -1); // no painted kerb: the road just crumbles into the pavement
+  else { c.fillStyle = "#f2c200"; c.fillRect(0, TOP - 6, W, 6); c.fillStyle = INK; for (let x = 0; x < W; x += 36) c.fillRect(x, TOP - 6, 18, 6); }
   // billboards stand on this pavement, so they are drawn after it
   for (const s of AD_SLOTS) drawBillboard(c, s, ads[s.id]);
 
   // road
   c.fillStyle = j.road; c.fillRect(0, TOP, W, BOTTOM - TOP);
   for (let i = 0; i < 700; i++) { c.fillStyle = rnd() > 0.5 ? "rgba(255,255,255,.04)" : "rgba(0,0,0,.08)"; c.fillRect(rnd() * W, TOP + rnd() * (BOTTOM - TOP), 2 + rnd() * 3, 2); }
-  if (j.id === "ojuelegba") { // patched tar and a puddle
-    c.fillStyle = "rgba(0,0,0,.16)"; for (const [px, py, pw, ph] of [[120, 300, 70, 26], [420, 214, 56, 20], [640, 330, 80, 22]]) { c.beginPath(); c.ellipse(px, py, pw / 2, ph / 2, 0, 0, Math.PI * 2); c.fill(); }
-    c.fillStyle = "rgba(130,170,200,.18)"; c.beginPath(); c.ellipse(300, 246, 40, 9, 0, 0, Math.PI * 2); c.fill();
-  }
+  if (dirt) dirtRoad(c, rnd);
   if (j.id === "obalende") { // old painted bus lane
     c.fillStyle = "rgba(247,181,0,.16)"; c.fillRect(0, TOP + 142, STOP_X - 6, 62);
   }
-  c.strokeStyle = "rgba(245,240,200,.85)"; c.lineWidth = 3; c.setLineDash(j.id === "lekki" ? [40, 26] : [28, 22]);
-  for (const y of [TOP + 71, TOP + 141]) { c.beginPath(); c.moveTo(0, y); c.lineTo(STOP_X - 6, y); c.stroke(); }
-  c.setLineDash([]);
+  if (!dirt) { // dirt roads have no lane paint
+    c.strokeStyle = "rgba(245,240,200,.85)"; c.lineWidth = 3; c.setLineDash(j.id === "lekki" ? [40, 26] : [28, 22]);
+    for (const y of [TOP + 71, TOP + 141]) { c.beginPath(); c.moveTo(0, y); c.lineTo(STOP_X - 6, y); c.stroke(); }
+    c.setLineDash([]);
+  }
+  for (const h of holesOf(j.id)) pothole(c, h.x, spotY(h.lane), h.rx, h.ry, dirt); // dry; the rain fills them (weather.ts)
   if (j.id === "lekki") { c.fillStyle = "rgba(245,240,200,.55)"; c.fillRect(0, TOP + 5, W, 2); c.fillRect(0, BOTTOM - 7, W, 2); }
-  c.fillStyle = "#f5f0c8"; c.fillRect(STOP_X + 2, TOP, 6, BOTTOM - TOP);
-  for (let y = TOP + 8; y < BOTTOM - 10; y += 22) c.fillRect(STOP_X + 18, y, 46, 11);
+  c.fillStyle = dirt ? "rgba(245,240,200,.4)" : "#f5f0c8"; c.fillRect(STOP_X + 2, TOP, 6, BOTTOM - TOP); // a worn stop line on dirt
+  if (!dirt) for (let y = TOP + 8; y < BOTTOM - 10; y += 22) c.fillRect(STOP_X + 18, y, 46, 11);
 
   // bottom pavement
-  c.fillStyle = "#f2c200"; c.fillRect(0, BOTTOM, W, 6); c.fillStyle = INK; for (let x = 18; x < W; x += 36) c.fillRect(x, BOTTOM, 18, 6);
+  if (dirt) crumbledEdge(c, BOTTOM, rnd, 1);
+  else { c.fillStyle = "#f2c200"; c.fillRect(0, BOTTOM, W, 6); c.fillStyle = INK; for (let x = 18; x < W; x += 36) c.fillRect(x, BOTTOM, 18, 6); }
   c.fillStyle = j.pavement; c.fillRect(0, BOTTOM + 6, W, H - BOTTOM - 6);
   c.strokeStyle = "rgba(0,0,0,.08)"; c.lineWidth = 2;
   if (j.id === "lekki") { // clean pavers in a herringbone-ish grid

@@ -14,7 +14,8 @@ export type Junction = {
   mix: Record<Kind, number>;    // how often each vehicle shows up
   skyTop: string;
   skyBottom: string;
-  road: string;                 // asphalt colour
+  road: string;                 // road colour (asphalt, or packed earth on a dirt road)
+  surface: "dirt" | "tar";      // dirt roads have ruts, potholes and mud in the rain
   pavement: string;             // pavement colour
 };
 
@@ -22,13 +23,13 @@ export const JUNCTIONS: Record<JunctionId, Junction> = {
   ojuelegba: {
     id: "ojuelegba",
     name: "Ojuelegba",
-    blurb: "Lots of okadas and keke. Long red light, small money.",
+    blurb: "Lots of okadas and keke on a rough dirt road. Long red light, small money.",
     red: 24, tier: 1,
     perLane: [8, 10],
     flow: 0.6, jam: 0.1,
     mix: { okada: 5, keke: 4, danfo: 3, car: 2, jeep: 0.3 },
     skyTop: "#ffcf5c", skyBottom: "#ff9a5a",
-    road: "#3f3a3c", pavement: "#d8b384",
+    road: "#8b6742", surface: "dirt", pavement: "#d8b384",
   },
   obalende: {
     id: "obalende",
@@ -39,7 +40,7 @@ export const JUNCTIONS: Record<JunctionId, Junction> = {
     flow: 1, jam: 0.4,
     mix: { okada: 2, keke: 2, danfo: 5, car: 3, jeep: 0.6 },
     skyTop: "#ffd98a", skyBottom: "#ff8f6b",
-    road: "#35373d", pavement: "#bfc0bd",
+    road: "#35373d", surface: "tar", pavement: "#bfc0bd",
   },
   lekki: {
     id: "lekki",
@@ -50,7 +51,7 @@ export const JUNCTIONS: Record<JunctionId, Junction> = {
     flow: 1.3, jam: 0.6,
     mix: { okada: 0.4, keke: 0, danfo: 0.5, car: 5, jeep: 3 },
     skyTop: "#ffb86b", skyBottom: "#e8647c",
-    road: "#2c2e34", pavement: "#e9e5d6",
+    road: "#2c2e34", surface: "tar", pavement: "#e9e5d6",
   },
 };
 
