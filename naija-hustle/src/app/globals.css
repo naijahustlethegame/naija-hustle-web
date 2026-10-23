@@ -264,8 +264,17 @@ h3 { font-size: 1.5rem; }
 /* Sellers and Invite (second dock row). Append to the end of your stylesheet.
    Desktop already works: .dock-btn.mini spans 2 of the 4 columns, so the two buttons are equal halves under the main row.
    On a phone each half is only ~150px wide, so the label stacks above the small text instead of sitting beside it. */
+
+/* The dock no longer floats over the street: it sits in the page under it, and the player scrolls down to it. */
+.dock { position: relative; bottom: auto; z-index: auto; }
+
+/* The Location, Tray and Invite menus open in the page, just above the dock buttons, instead of floating over the street. */
+.sheet { position: static; left: auto; right: auto; bottom: auto; max-height: none; overflow: visible; margin-bottom: 10px; }
+
+/* Sellers and Invite (second dock row). Desktop already works: .dock-btn.mini spans 2 of the 4 columns,
+   so the two buttons are equal halves under the main row.
+   On a phone each half is only ~150px wide, so the label stacks above the small text instead of sitting beside it. */
 .dock-btn.mini span { line-height: 1.1; }
 @media (max-width: 700px) {
   .dock-btn.mini { flex-direction: column; align-items: flex-start; justify-content: center; gap: 1px; padding: 7px 12px; }
 }
- 
