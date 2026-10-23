@@ -5,6 +5,7 @@ import { loadAvatar, type Pot, type SaveData } from "@/lib/storage";
 import { ApiError, api, loadPlayer, toPot } from "@/lib/api";
 import { ITEMS, ITEM_IDS, STORAGE_CAP, countStock, emptyStock, naira } from "@/game/engine/items";
 import { JUNCTIONS, type JunctionId } from "@/game/engine/junctions";
+import { lockedAt, marketFor, packFor, starterUnlocks, type Unlocks } from "@/game/engine/progression";
 import { feeRange, fineFor, marketById, marketsFor, rollMarket, type Market } from "@/game/engine/markets";
 import type { ItemId, Stock } from "@/game/engine/types";
 import { LEVEL_NAME, MAX_LEVEL, type RunResult, type RunnerScene } from "@/game/scenes/RunnerScene";
@@ -38,6 +39,11 @@ export default function RunnerView() {
   const [pot, setPot] = useState<Pot | null>(null);
   const [junction, setJunction] = useState<JunctionId>("ojuelegba");
   const [market, setMarket] = useState<Market | null>(null); // rolled after mount so server and browser agree
+  const [unlocks, setUnlocks] = useState<Unlocks>(starterUnlocks);
+  const unlocksRef = useRef(unlocks);
+  unlocksRef.current = unlocks;
+  /** The market as you can play it: prizes you have not unlocked are left out. */
+  const view = (m: Market) => marketFor(m, unlocksRef.current);
 
   const marketRef = useRef<Market | null>(null);
   marketRef.current = market;
@@ -57,6 +63,7 @@ export default function RunnerView() {
         setNotice(`You left mid-run, so LASTMA caught you. You lost ${lost} ${lost === 1 ? "item" : "items"} and ${naira(lostCash)}${fine ? `, and paid a fine of ${naira(fine)}` : ""}.`);
       }
       saveRef.current = s;
+      setUnlocks(s.unlocks); unlocksRef.current = s.unlocks;
       setMoney(s.money); setCarrying(countStock(s.storage)); setJunction(s.junction); setPot(s.pot);
       if (s.pot && pm) { setMarket(pm); setUi("pot"); }
       else setMarket((m) => (m && m.junction === s.junction ? m : rollMarket(s.junction)));
@@ -96,7 +103,7 @@ export default function RunnerView() {
     Promise.all([import("@/game/scenes/RunnerScene"), document.fonts.load("24px Anton").catch(() => [])]).then(([{ RunnerScene }]) => {
       if (dead) return;
       const reduced = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
-      const s = new RunnerScene(canvas, { avatar: loadAvatar(), market: marketRef.current ?? rollMarket("ojuelegba"), reducedMotion: reduced, onEnd: (r) => finishRef.current(r) });
+      const s = new RunnerScene(canvas, { avatar: loadAvatar(), market: view(marketRef.current ?? rollMarket("ojuelegba")), reducedMotion: reduced, onEnd: (r) => finishRef.current(r) });
       s.start(); sceneRef.current = s; setReady(true);
       const io = new IntersectionObserver(([e]) => (e.isIntersecting ? s.resume() : s.pause()));
       io.observe(canvas);
@@ -106,15 +113,16 @@ export default function RunnerView() {
   }, [refresh]);
 
   // keep the scene pointed at the market that has been rolled
-  useEffect(() => { if (ready && market) sceneRef.current?.setMarket(market); }, [ready, market]);
+  useEffect(() => { if (ready && market) sceneRef.current?.setMarket(marketFor(market, unlocks)); }, [ready, market, unlocks]);
 
   const minFee = feeRange(junction)[0], maxFee = feeRange(junction)[1];
   const space = STORAGE_CAP - carrying;
+  const lockedHere = ITEM_IDS.filter((id) => marketsFor(junction).some((m) => lockedAt(m, unlocks).includes(id)));
   const canRun = ready && !busy && !pot && money >= minFee && space > 0;
 
   const start = (level: number, room: number, mk: Market) => {
     const sc = sceneRef.current; if (!sc) return;
-    marketRef.current = mk; sc.setMarket(mk);
+    marketRef.current = mk; sc.setMarket(view(mk));
     applied.current = false; runLevel.current = level; setSum(null); setNotice(""); setUi("running");
     sc.begin(room, level);
   };
@@ -200,6 +208,12 @@ export default function RunnerView() {
             {marketsFor(junction).map((m) => `${m.name} (${naira(m.fee)})`).join(", ")}.
             Dearer markets have better things.
           </p>
+          {lockedHere.length > 0 && (
+            <p className="note" role="note">
+              Locked here: {lockedHere.map((id) => `${ITEMS[id].icon} ${ITEMS[id].name} (${packFor(id)?.name ?? "locked"})`).join(", ")}.
+              You will not pick these up until you unlock them on the junction page.
+            </p>
+          )}
           <div className="btns">
             <button className="btn" onClick={run} disabled={!canRun}>{ready ? "Pay entry and run" : "Loading"}</button>
             <Link className="btn alt" href="/play">Back to the junction</Link>

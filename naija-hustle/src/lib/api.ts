@@ -1,5 +1,7 @@
 import { loadAvatar, type HiredSeller, type Pot, type SaveData } from "@/lib/storage";
 import { emptyStock } from "@/game/engine/items";
+import { STARTER_ITEMS, STARTER_JUNCTIONS, type ItemPackId, type Unlocks } from "@/game/engine/progression";
+import type { ItemId } from "@/game/engine/types";
 import type { Stock } from "@/game/engine/types";
 import type { JunctionId } from "@/game/engine/junctions";
 import { token } from "@/lib/supabase";
@@ -21,11 +23,12 @@ type RawPot = { items: Partial<Stock>; cash: number | string; level: number; mar
 export const toPot = (p: RawPot): Pot => ({ items: { ...emptyStock(), ...p.items }, cash: Number(p.cash), level: p.level, market: p.market, running: p.running });
 const toStock = (s?: Partial<Stock>): Stock => ({ ...emptyStock(), ...(s ?? {}) });
 
-type RawPlayer = { money: number | string; junction: JunctionId; stock: Partial<Stock>; storage: Partial<Stock>; sellers: { seller_id: string; since: string }[]; pot: RawPot | null };
+type RawPlayer = { money: number | string; junction: JunctionId; stock: Partial<Stock>; storage: Partial<Stock>; sellers: { seller_id: string; since: string }[]; pot: RawPot | null; unlocked_junctions?: JunctionId[]; unlocked_items?: ItemId[] };
 const toSave = (p: RawPlayer): SaveData => ({
   money: Number(p.money), junction: p.junction, stock: toStock(p.stock), storage: toStock(p.storage),
   sellers: p.sellers.map((s): HiredSeller => ({ id: s.seller_id, since: Date.parse(s.since) })),
   pot: p.pot ? toPot(p.pot) : null,
+  unlocks: { junctions: p.unlocked_junctions ?? [...STARTER_JUNCTIONS], items: p.unlocked_items ?? [...STARTER_ITEMS] } satisfies Unlocks,
 });
 
 /** The player's full state from the server. First call of a browser session creates the row; later ones are a plain GET. Concurrent calls share one request. */
@@ -49,6 +52,8 @@ export const api = {
   finish: (items: Stock, cash: number) => call<{ pot: RawPot }>("/runs/finish", "POST", { items, cash: Math.floor(cash) }),
   fail: () => call<{ money: number }>("/runs/fail", "POST"),
   bank: async () => { const b = await call<{ money: number; storage: Partial<Stock> }>("/runs/bank", "POST"); return { money: Number(b.money), storage: toStock(b.storage) }; },
+  unlockJunction: (id: JunctionId) => call<{ money: number; junctions: JunctionId[] }>("/unlocks/junction", "POST", { id }),
+  unlockPack: (id: ItemPackId) => call<{ money: number; items: ItemId[] }>("/unlocks/pack", "POST", { id }),
   hire: (id: string) => call<{ money: number }>("/sellers/hire", "POST", { id }),
   collect: () => call<{ collected: number; money: number }>("/sellers/collect", "POST"),
 };

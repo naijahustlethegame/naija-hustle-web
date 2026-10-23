@@ -33,8 +33,8 @@ export type Market = {
   look: Look;
 };
 
-/** The fine for getting caught equals the entry fee, so dearer markets also cost more to lose. */
-export const fineFor = (m: Market) => m.fee;
+/** The fine for getting caught is twice the entry fee, so dearer markets also cost more to lose. */
+export const fineFor = (m: Market) => m.fee * 2; // same as the server
 
 const cheap = { cash: [30, 60, 120] as [number, number, number] };
 const mid = { cash: [60, 120, 300] as [number, number, number] };

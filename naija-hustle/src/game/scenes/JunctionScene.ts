@@ -281,7 +281,7 @@ export class JunctionScene {
     if (phase !== "green") {
       if (!rolled) this.ambient = [];
       this.buildQueue(rng);
-      let el = Math.min(local, 7); // joined late: the cars have already pulled up
+      let el = Math.min(local, 16); // joined late: the cars have already pulled up, and the later ones are still rolling in
       while (el > 0) { const s = Math.min(0.05, el); this.updateTraffic(s); el -= s; }
       if (this.playing || this.demo) this.bannerT = Math.max(0.1, 4 - local);
       if (rolled && this.playing && this.ev.kind === "lastma") for (let i = 0; i < 2; i++) this.loseRandomItem();
@@ -295,6 +295,10 @@ export class JunctionScene {
     LANE_Y.forEach((ly, lane) => {
       const n = j.perLane[0] + Math.floor(rng() * (j.perLane[1] - j.perLane[0] + 1)) + extra;
       let front = STOP_X - 6, leader: Veh | null = null;
+      // The first cars pull up together. The rest keep rolling in while the light is red, one at a time,
+      // so the queue grows the way a real one does. They are all in place well before the amber.
+      const first = Math.ceil(n * 0.55), later = n - first, span = redFor(j, this.cycle) * 0.55;
+      let late = 0;
       for (let k = 0; k < n; k++) {
         const kind = pickKind(j.mix, rng), s = SPEC[kind];
         const slotX = front - s.w / 2;
@@ -302,8 +306,9 @@ export class JunctionScene {
         front = slotX - s.w / 2 - 16; // next car's bumper sits one gap behind this car
         const buyer = makeBuyer(kind, this.ev?.kind ?? "normal", rng);
         const y = ly + 20 - s.h / 2 - 2;
+        if (k >= first) late = Math.max(late + 0.35, ((k - first + 0.3 + rng() * 0.7) / later) * span); // seconds after the light turns red
         const v: Veh = {
-          id: this.nextId++, kind, x: -s.w / 2 - 40 - k * 175 - rng() * 40, y, w: s.w, h: s.h,
+          id: this.nextId++, kind, x: -s.w / 2 - 40 - Math.min(k, first) * 175 - rng() * 40 - late * 300, y, w: s.w, h: s.h,
           tint: pickColor(kind, rng), tell: buyer.tell, sold: false,
           lane, slotX, vx: 0, st: "arriving", buyer, done: false, launchIn: 0, leader,
           key: `${this.cycle}:${lane}:${k}`, taken: false,

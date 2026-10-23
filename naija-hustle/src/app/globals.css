@@ -159,3 +159,11 @@ h3 { font-size: 1.5rem; }
 .sound-row { display: flex; justify-content: flex-end; margin-top: 12px; }
 .sound-btn { font: inherit; font-weight: 700; padding: 8px 14px; border: 3px solid var(--tar); border-radius: 999px; background: var(--paper); cursor: pointer; }
 .sound-btn[aria-pressed="true"] { background: var(--danfo); box-shadow: 3px 3px 0 var(--tar); }
+
+/* locked junctions and the unlock shop */
+.pick.locked { cursor: default; background: #e6e2d2; border-style: dashed; opacity: 0.85; }
+.pick.locked strong { color: #5b5648; }
+.unlocks { margin: 16px 0; padding: 12px 14px; border: 3px solid var(--tar); border-radius: 14px; background: var(--paper); }
+.unlocks h2 { margin-top: 0; }
+.unlock-list li { grid-template-columns: 1fr auto; }
+@media (max-width: 520px) { .unlock-list li { grid-template-columns: 1fr; } }

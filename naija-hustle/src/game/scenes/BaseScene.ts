@@ -56,11 +56,13 @@ export class BaseScene {
     this.fx(() => sfx.pass("car", 0.6)); // the queue rolls up
     LANE_Y.slice(0, 2).forEach((ly, lane) => {
       let front = STOP_X - 6, leader: Car | null = null;
-      for (let k = 0; k < 4; k++) {
+      const N = 7, first = 4; let late = 0; // the first cars pull up together, the rest keep arriving while the light is red
+      for (let k = 0; k < N; k++) {
         const kind = pickKind(JUNCTIONS.obalende.mix), s = SPEC[kind];
-        const slotX = front - s.w / 2; front = slotX - s.w / 2 - 16;
+        const slotX = front - s.w / 2; if (slotX - s.w / 2 < 30) break; front = slotX - s.w / 2 - 16;
+        if (k >= first) late = Math.max(late + 0.4, ((k - first + 0.3 + Math.random() * 0.7) / (N - first)) * 8);
         const b = makeBuyer(kind, "normal");
-        const c: Car = { id: this.nextId++, kind, x: -s.w - k * 170, y: ly + 18 - s.h / 2, w: s.w, h: s.h, tint: pickColor(kind), tell: b.tell, sold: false,
+        const c: Car = { id: this.nextId++, kind, x: -s.w - Math.min(k, first) * 170 - late * 300, y: ly + 18 - s.h / 2, w: s.w, h: s.h, tint: pickColor(kind), tell: b.tell, sold: false,
           slotX, vx: 0, st: "arriving", taken: !b.willBuy, leader, lane };
         this.cars.push(c); leader = c;
       }

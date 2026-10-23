@@ -13,10 +13,25 @@ import { H, W, type ItemId, type Stock } from "../engine/types";
  */
 
 // ---- tuning ----
-export const RUN_DIST = 960;      // world units to the finish gate
-const BASE_SPEED = 20;            // units per second at the start
-const RAMP_SPEED = 10;            // extra units per second by the finish
-const ROW_GAP: [number, number] = [32, 23]; // gap between obstacle rows, start and end of the run
+/**
+ * How the road changes with the location (the market's tier). Better places are visibly faster, speed up more
+ * as you go, and put the obstacle rows closer together in time. Every run still lasts about 46 seconds
+ * (a little over a third longer than before), so the finish line is further away on a faster road.
+ *   dist   world units to the finish gate
+ *   base   units per second at the start; ramp is how much faster it gets by the finish
+ *   gap    seconds between obstacle rows at the start and the end of the run
+ *   far    how far ahead you can see (a faster road needs a longer warning)
+ *   pickup chance that a row is followed by a trail of pickups
+ */
+type Tune = { dist: number; base: number; ramp: number; gap: [number, number]; far: number; pickup: number };
+const TUNE: Record<1 | 2 | 3, Tune> = {
+  1: { dist: 1150, base: 20, ramp: 10, gap: [1.6, 0.77], far: 75, pickup: 0.45 },
+  2: { dist: 1550, base: 26, ramp: 16, gap: [1.5, 0.66], far: 100, pickup: 0.42 },
+  3: { dist: 2050, base: 33, ramp: 26, gap: [1.4, 0.56], far: 130, pickup: 0.40 },
+};
+export const RUN_DIST = TUNE[1].dist;
+const MIN_ROW_SECS = 0.36;        // however high the risk level, rows never come closer than this
+const SOLID_STRETCH: Partial<Record<OKind, number>> = { danfo: 1.7, okada: 1.35 }; // buses and bikes are drawn tall, so nobody tries to jump them
 const JUMP_V = 9, GRAVITY = 26, CLEAR_H = 0.55; // jump power, gravity, height needed to clear a low obstacle
 const SLOW_SECS = 1.2;            // slowdown after a stumble
 const CHASE_SECS = 7;             // how long the officer stays on your heels after a stumble
@@ -32,7 +47,7 @@ const denseK = (lv: number) => 0.04 * (lv - 1);      // more solid obstacles
 export const LEVEL_NAME = ["", "", "DOUBLE UP", "TRIPLE OR NOTHING", "ALL IN"];
 
 // ---- projection ----
-const HZ = 150, GY = 470, VX = 480, K = 10, FAR = 75, LANE_W = 150, ROAD_HALF = 240;
+const HZ = 150, GY = 470, VX = 480, K = 10, LANE_W = 150, ROAD_HALF = 240;
 const INK = "#1b1b22";
 const sOf = (rel: number) => K / (K + rel);
 const yOf = (s: number) => HZ + (GY - HZ) * s;
@@ -80,6 +95,10 @@ export class RunnerScene {
   private bgs: Record<string, HTMLCanvasElement> = {};
   private market: Market;
   private reduced: boolean;
+
+  private get tune(): Tune { return TUNE[this.market.tier] ?? TUNE[1]; }
+  private get far() { return this.tune.far; }
+  private get runDist() { return this.tune.dist; }
 
   private phase: RunPhase = "idle";
   private t = 0; private cd = 0; private endT = 0; private ended = false;
@@ -178,7 +197,7 @@ export class RunnerScene {
 
   /** One row of obstacles, then maybe a trail of pickups. At least one lane is always clear of solid things. */
   private spawnRow() {
-    const z = this.nextZ, p = Math.min(1, z / RUN_DIST);
+    const z = this.nextZ, p = Math.min(1, z / this.runDist), T = this.tune;
     const r = this.rng();
     let f = this.free;
     if (r < 0.28) f = Math.max(-1, f - 1); else if (r < 0.56) f = Math.min(1, f + 1);
@@ -194,18 +213,20 @@ export class RunnerScene {
         if (q < 0.7 + denseK(this.level)) this.push(this.solid(), lane, z); else if (q < 0.85 + denseK(this.level) / 2) this.push(this.low(), lane, z);
       }
     }
-    if (this.rng() < 0.45) {
+    if (this.rng() < T.pickup) {
       const lane = this.rng() < 0.7 ? f : [-1, 0, 1][Math.floor(this.rng() * 3)];
       const n = 2 + Math.floor(this.rng() * 2);
       for (let i = 0; i < n; i++) {
-        const zz = z + 6 + i * 4.5;
+        const zz = z + 6 + i * 4.5 * (T.base / 20);
         if (this.rng() < this.market.cashChance) {
           const c = this.weighted(Object.fromEntries(this.market.cash.map((v, i2) => [String(v), CASH_ODDS[i2]])) as Record<string, number>);
           this.push("cash", lane, zz, { cash: Number(c) });
         } else this.push("item", lane, zz, { item: this.weighted(this.market.items as Record<ItemId, number>) });
       }
     }
-    this.nextZ += lerp(ROW_GAP[0], ROW_GAP[1], p) * gapK(this.level) + this.rng() * 4;
+    const base = T.base + T.ramp * p; // speed here, before the risk level speeds it up
+    const gap = Math.max(lerp(T.gap[0], T.gap[1], p) * base * gapK(this.level), MIN_ROW_SECS * base * speedK(this.level));
+    this.nextZ += gap + this.rng() * 4 * (T.base / 20);
   }
 
   // ---------- simulation ----------
@@ -222,7 +243,7 @@ export class RunnerScene {
       this.dist += PRE_SPEED * speedK(this.level) * dt; this.cd += dt;
       const n = 3 - Math.floor(this.cd / COUNTDOWN);
       if (n !== this.lastN && n >= 0) { this.lastN = n; if (n > 0) sfx.tick(); else sfx.go(); }
-      while (this.nextZ < this.dist + FAR) this.spawnRow();
+      while (this.nextZ < this.dist + this.far) this.spawnRow();
       if (this.cd >= COUNTDOWN * 4) { this.phase = "run"; this.pops.push({ x: W / 2, y: 190, t: 0, text: "RUN!", color: "#7dffa8", size: 54 }); }
       return;
     }
@@ -243,12 +264,12 @@ export class RunnerScene {
   }
 
   private updateRun(dt: number) {
-    const progress = this.dist / RUN_DIST;
+    const progress = this.dist / this.runDist;
     if (this.slowT > 0) this.slowT -= dt;
     const mul = this.slowT > 0 ? 0.5 + 0.5 * (1 - this.slowT / SLOW_SECS) : 1;
-    this.speed = (BASE_SPEED + RAMP_SPEED * progress) * mul * speedK(this.level);
+    this.speed = (this.tune.base + this.tune.ramp * progress) * mul * speedK(this.level);
     this.dist += this.speed * dt;
-    while (this.nextZ < this.dist + FAR && this.nextZ < RUN_DIST - 20) this.spawnRow();
+    while (this.nextZ < this.dist + this.far && this.nextZ < this.runDist - 20) this.spawnRow();
 
     for (const o of this.objs) {
       if (o.used) continue;
@@ -268,7 +289,7 @@ export class RunnerScene {
       } else { o.used = true; this.caught(); return; }
     }
     this.objs = this.objs.filter((o) => o.z - this.dist > -4);
-    if (this.dist >= RUN_DIST) {
+    if (this.dist >= this.runDist) {
       this.phase = "finished"; this.endT = 0; sfx.fanfare();
       this.pops.push({ x: W / 2, y: 190, t: 0, text: this.market.name.toUpperCase() + "!", color: "#ffd84a", size: 44 });
     }
@@ -356,15 +377,15 @@ export class RunnerScene {
     c.fillStyle = this.market.look.road; c.beginPath(); c.moveTo(VX, HZ); c.lineTo(VX + ROAD_HALF * sb, H); c.lineTo(VX - ROAD_HALF * sb, H); c.closePath(); c.fill();
     // painted kerbs and lane dashes scroll with distance
     const kp = 8, ko = this.dist % (kp * 2), dp = 8, dof = this.dist % dp;
-    for (let k = -1; k * kp - ko < FAR; k++) {
+    for (let k = -1; k * kp - ko < this.far; k++) {
       const z0 = k * kp - ko, z1 = z0 + kp, col = (Math.floor((this.dist + k * kp - ko) / kp) % 2 === 0) ? "#f2c200" : INK;
       if (z1 < -4) continue;
-      for (const side of [-1, 1]) this.strip(Math.max(-4, z0), Math.min(FAR, z1), side * ROAD_HALF, side * (ROAD_HALF + 16), col);
+      for (const side of [-1, 1]) this.strip(Math.max(-4, z0), Math.min(this.far, z1), side * ROAD_HALF, side * (ROAD_HALF + 16), col);
     }
-    for (let k = -1; k * dp - dof < FAR; k++) {
+    for (let k = -1; k * dp - dof < this.far; k++) {
       const z0 = k * dp - dof, z1 = z0 + 3.5;
       if (z1 < -4) continue;
-      for (const bx of [-LANE_W / 2, LANE_W / 2]) this.strip(Math.max(-4, z0), Math.min(FAR, z1), bx - 3.5, bx + 3.5, "rgba(245,240,200,.85)");
+      for (const bx of [-LANE_W / 2, LANE_W / 2]) this.strip(Math.max(-4, z0), Math.min(this.far, z1), bx - 3.5, bx + 3.5, "rgba(245,240,200,.85)");
     }
   }
 
@@ -378,21 +399,21 @@ export class RunnerScene {
     // sprites: roadside scenery, obstacles and pickups, far to near
     type Sp = { rel: number; paint: () => void };
     const sprites: Sp[] = [];
-    const i0 = Math.floor((this.dist - 6) / 14), i1 = Math.ceil((this.dist + FAR) / 14);
+    const i0 = Math.floor((this.dist - 6) / 14), i1 = Math.ceil((this.dist + this.far) / 14);
     for (let i = i0; i <= i1; i++) {
       for (const side of [-1, 1]) {
         const rel = i * 14 - this.dist, h = hash(i * 2 + (side > 0 ? 1 : 0) + 7);
-        if (rel < -6 || rel > FAR) continue;
+        if (rel < -6 || rel > this.far) continue;
         sprites.push({ rel, paint: () => this.scenery(rel, side, h, i) });
       }
-      if (i % 2 === 0) { const rel = i * 14 - this.dist; if (rel >= -6 && rel <= FAR) for (const side of [-1, 1]) sprites.push({ rel, paint: () => this.pole(rel, side) }); }
+      if (i % 2 === 0) { const rel = i * 14 - this.dist; if (rel >= -6 && rel <= this.far) for (const side of [-1, 1]) sprites.push({ rel, paint: () => this.pole(rel, side) }); }
     }
     for (const o of this.objs) {
       const rel = o.z - this.dist;
-      if (rel > FAR || rel < -2 || (o.used && (o.kind === "item" || o.kind === "cash"))) continue;
+      if (rel > this.far || rel < -2 || (o.used && (o.kind === "item" || o.kind === "cash"))) continue;
       sprites.push({ rel, paint: () => this.object(o, rel) });
     }
-    if (this.dist > RUN_DIST - FAR - 5) sprites.push({ rel: RUN_DIST - this.dist, paint: () => this.gate(RUN_DIST - this.dist) });
+    if (this.dist > this.runDist - this.far - 5) sprites.push({ rel: this.runDist - this.dist, paint: () => this.gate(this.runDist - this.dist) });
     sprites.sort((a, b) => b.rel - a.rel);
     for (const s of sprites) if (s.rel >= 0) s.paint();
     this.drawPlayer();
@@ -408,15 +429,15 @@ export class RunnerScene {
     this.drawOverlay();
   }
 
-  private fade(rel: number) { return clamp((FAR - rel) / 12, 0, 1); }
+  private fade(rel: number) { return clamp((this.far - rel) / (this.far / 6), 0, 1); }
 
   private object(o: Obj, rel: number) {
     const c = this.ctx, s = sOf(rel), x = xOf(o.lane * LANE_W, s), gy = yOf(s);
     c.save(); c.globalAlpha = this.fade(rel);
     switch (o.kind) {
       case "lastma": this.officer(x, gy, s * 1.9, o.seed % 7); break;
-      case "danfo": this.danfo(x, gy, s); break;
-      case "okada": this.okada(x, gy, s, o.seed); break;
+      case "danfo": this.stretched(gy, SOLID_STRETCH.danfo!, () => this.danfo(x, gy, s)); break;
+      case "okada": this.stretched(gy, SOLID_STRETCH.okada!, () => this.okada(x, gy, s, o.seed)); break;
       case "pothole": {
         c.fillStyle = "rgba(0,0,0,.25)"; c.beginPath(); c.ellipse(x, gy - 4 * s, 66 * s, 15 * s, 0, 0, Math.PI * 2); c.fill();
         c.fillStyle = "#0f0f13"; c.beginPath(); c.ellipse(x, gy - 6 * s, 56 * s, 11 * s, 0, 0, Math.PI * 2); c.fill();
@@ -463,6 +484,11 @@ export class RunnerScene {
     if (s > 0.35) { c.fillStyle = INK; c.font = `bold ${Math.max(5, 7 * s)}px sans-serif`; c.textAlign = "center"; c.fillText("LASTMA", x, gy - 76 * s); }
     dot(c, x, gy - 98 * s, 10 * s, "#8a5a3c");
     rr(c, x - 11 * s, gy - 112 * s, 22 * s, 9 * s, 3 * s, "#1f3a6e"); rr(c, x - 11 * s, gy - 105 * s, 28 * s, 3 * s, 1, "#1f3a6e"); // cap with brim
+  }
+
+  /** Draw something taller than it is wide, standing on the same ground line. */
+  private stretched(gy: number, k: number, paint: () => void) {
+    const c = this.ctx; c.save(); c.translate(0, gy); c.scale(1, k); c.translate(0, -gy); paint(); c.restore();
   }
 
   private danfo(x: number, gy: number, s: number) {
@@ -570,7 +596,7 @@ export class RunnerScene {
   }
 
   private speedLines() {
-    if (this.phase !== "run" || this.speed < BASE_SPEED * 0.8) return;
+    if (this.phase !== "run" || this.speed < this.tune.base * 0.8) return;
     const c = this.ctx, k = clamp((this.speed - 18) / 14, 0, 1);
     c.strokeStyle = `rgba(255,255,255,${0.1 + k * 0.14})`; c.lineWidth = 2;
     for (let i = 0; i < 16; i++) {
@@ -597,7 +623,7 @@ export class RunnerScene {
     this.text(`₦${this.cash}`, 28, 46, 30, "#7dffa8");
     if (this.level > 1) { this.panel(14, 62, 190, 34, "rgba(214,84,12,.92)"); this.text(`RISK x${this.level}`, 28, 88, 24, "#fff"); }
     // distance to the market
-    const bx = W / 2 - 170, frac = clamp(this.dist / RUN_DIST, 0, 1);
+    const bx = W / 2 - 170, frac = clamp(this.dist / this.runDist, 0, 1);
     this.panel(bx, 12, 340, 44);
     c.fillStyle = "rgba(255,255,255,.16)"; c.beginPath(); c.roundRect(bx + 16, 32, 296, 10, 5); c.fill();
     c.fillStyle = "#ffd84a"; c.beginPath(); c.roundRect(bx + 16, 32, 296 * frac, 10, 5); c.fill();
@@ -625,7 +651,7 @@ export class RunnerScene {
     if (this.phase === "idle") {
       c.fillStyle = "rgba(20,12,4,.5)"; c.fillRect(0, 0, W, H);
       this.text(this.market.name.toUpperCase(), W / 2, 210, 54, "#ffd84a", "center", W - 80);
-      this.text("Dodge LASTMA. Jump potholes. Grab stock on the way.", W / 2, 262, 24, "#ffffff", "center", W - 80);
+      this.text("Jump crates and potholes. Go round the buses, bikes and officers.", W / 2, 262, 24, "#ffffff", "center", W - 80);
       this.text("Pay the entry fee below to start", W / 2, 306, 22, "#7dffa8", "center");
     } else if (this.phase === "countdown") {
       const n = 3 - Math.floor(this.cd / COUNTDOWN);

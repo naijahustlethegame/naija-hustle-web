@@ -1,8 +1,8 @@
 import type { ItemId, Stock } from "./types";
 
-/** The first four are the everyday stock. The rest are only sold by particular markets. */
+/** The first five are the everyday stock every player starts with. Chargers, gadgets, sunglasses and perfume have to be unlocked. */
 export const ITEM_IDS: ItemId[] = ["water", "drink", "snack", "gadget", "fruit", "bread", "charger", "shades", "perfume"];
-export const CORE_ITEMS: ItemId[] = ["water", "drink", "snack", "gadget"];
+export const CORE_ITEMS: ItemId[] = ["water", "drink", "snack", "fruit", "bread"];
 
 /** cost = what a unit is worth at the market. price = typical street price before the buyer's mood. */
 export const ITEMS: Record<ItemId, { name: string; icon: string; cost: number; price: number }> = {

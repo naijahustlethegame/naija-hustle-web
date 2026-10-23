@@ -7,7 +7,8 @@ export type Junction = {
   name: string;
   blurb: string;
   red: number;                  // seconds of red light, before randomness
-  perLane: [number, number];    // cars queued per lane, min and max
+  tier: 1 | 2 | 3;              // 1 = first junction. Higher tiers are faster and pay more.
+  perLane: [number, number];    // cars queued per lane, min and max (the queue also keeps filling while the light is red)
   flow: number;                 // how thick the traffic is while the light is green
   jam: number;                  // chance of a go-slow hold-up on a normal light
   mix: Record<Kind, number>;    // how often each vehicle shows up
@@ -22,8 +23,8 @@ export const JUNCTIONS: Record<JunctionId, Junction> = {
     id: "ojuelegba",
     name: "Ojuelegba",
     blurb: "Lots of okadas and keke. Long red light, small money.",
-    red: 24,
-    perLane: [4, 6],
+    red: 24, tier: 1,
+    perLane: [6, 8],
     flow: 0.6, jam: 0.1,
     mix: { okada: 5, keke: 4, danfo: 3, car: 2, jeep: 0.3 },
     skyTop: "#ffcf5c", skyBottom: "#ff9a5a",
@@ -33,8 +34,8 @@ export const JUNCTIONS: Record<JunctionId, Junction> = {
     id: "obalende",
     name: "Obalende",
     blurb: "Danfos and office cars. Busy roads, so go-slows are common.",
-    red: 19,
-    perLane: [3, 5],
+    red: 19, tier: 2,
+    perLane: [6, 8],
     flow: 1, jam: 0.4,
     mix: { okada: 2, keke: 2, danfo: 5, car: 3, jeep: 0.6 },
     skyTop: "#ffd98a", skyBottom: "#ff8f6b",
@@ -44,8 +45,8 @@ export const JUNCTIONS: Record<JunctionId, Junction> = {
     id: "lekki",
     name: "Lekki toll gate",
     blurb: "Jeeps and nice cars. Short red light, big money, always busy.",
-    red: 14,
-    perLane: [3, 4],
+    red: 14, tier: 3,
+    perLane: [6, 7],
     flow: 1.3, jam: 0.6,
     mix: { okada: 0.4, keke: 0, danfo: 0.5, car: 5, jeep: 3 },
     skyTop: "#ffb86b", skyBottom: "#e8647c",

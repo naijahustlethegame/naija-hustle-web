@@ -4,6 +4,9 @@ import { useEffect, useRef, useState } from "react";
 import { loadAvatar } from "@/lib/storage";
 import { api, loadPlayer } from "@/lib/api";
 import { Sync } from "@/lib/sync";
+import { hasJunction, junctionUnlock, starterUnlocks, type Unlocks } from "@/game/engine/progression";
+import type { SaveData } from "@/lib/storage";
+import UnlockShop from "./UnlockShop";
 
 import { CAPACITY, CORE_ITEMS, ITEMS, ITEM_IDS, countStock, naira } from "@/game/engine/items";
 import { JUNCTION_LIST } from "@/game/engine/junctions";
@@ -20,6 +23,8 @@ export default function GameView({ demo = false }: { demo?: boolean }) {
   const [scene, setScene] = useState<JunctionScene | null>(null);
   const [snap, setSnap] = useState<Snapshot | null>(null);
   const [failed, setFailed] = useState(false);
+  const [unlocks, setUnlocks] = useState<Unlocks>(starterUnlocks);
+  const syncRef = useRef<Sync | null>(null);
 
   useEffect(() => {
     const canvas = ref.current!;
@@ -32,6 +37,8 @@ export default function GameView({ demo = false }: { demo?: boolean }) {
       let s!: InstanceType<typeof JunctionScene>;
       // The server owns money and stock. The scene queues changes here and they are sent in batches.
       const sync = demo ? undefined : new Sync(async () => { s.applyServer(await loadPlayer()); });
+      syncRef.current = sync ?? null;
+      if (save) setUnlocks(save.unlocks);
       s = new JunctionScene(canvas, {
         demo, multi: true, avatar: loadAvatar(), money: save?.money, stock: save?.stock, storage: save?.storage, junction: save?.junction,
         sync, onJunction: demo ? undefined : (j) => { api.setJunction(j).catch(() => {}); },
@@ -56,12 +63,14 @@ export default function GameView({ demo = false }: { demo?: boolean }) {
       <SoundToggle />
       {failed && <p className="why" role="alert">Could not reach the server. Refresh to try again.</p>}
       {!demo && <p className="rotate-hint">Turn your phone sideways for a bigger street.</p>}
-      {!demo && scene && snap && <Controls scene={scene} snap={snap} />}
+      {!demo && scene && snap && <Controls scene={scene} snap={snap} unlocks={unlocks}
+        beforeBuy={async () => { await syncRef.current?.flush(); }}
+        onBought={(s: SaveData) => { setUnlocks(s.unlocks); scene.applyServer(s); }} />}
     </>
   );
 }
 
-function Controls({ scene, snap }: { scene: JunctionScene; snap: Snapshot }) {
+function Controls({ scene, snap, unlocks, beforeBuy, onBought }: { scene: JunctionScene; snap: Snapshot; unlocks: Unlocks; beforeBuy: () => Promise<void>; onBought: (s: SaveData) => void }) {
   if (snap.playing) {
     return (
       <section className="panel" aria-label="On the road">
@@ -97,7 +106,14 @@ function Controls({ scene, snap }: { scene: JunctionScene; snap: Snapshot }) {
         <p className="money">You have <strong>{naira(snap.money)}</strong></p>
       </div>
       <div className="picker" role="radiogroup" aria-label="Junction">
-        {JUNCTION_LIST.map((j) => (
+        {JUNCTION_LIST.map((j) => !hasJunction(unlocks, j.id) ? (
+          <div key={j.id} className="pick locked" aria-label={`${j.name}, locked`}>
+            <strong>🔒 {j.name}</strong>
+            <span>{j.blurb}</span>
+            <span className="meta">Red light: about {j.red} seconds</span>
+            <span className="meta">Costs {naira(junctionUnlock(j.id)?.price ?? 0)} to unlock. See Unlock more below.</span>
+          </div>
+        ) : (
           <button key={j.id} role="radio" aria-checked={snap.junction === j.id} className="pick"
             onClick={() => scene.selectJunction(j.id)}>
             <strong>{j.name}</strong>
@@ -108,6 +124,7 @@ function Controls({ scene, snap }: { scene: JunctionScene; snap: Snapshot }) {
           </button>
         ))}
       </div>
+      <UnlockShop money={snap.money} unlocks={unlocks} beforeBuy={beforeBuy} onBought={onBought} />
 
       <div className="panel-head">
         <h2>Load your tray</h2>
