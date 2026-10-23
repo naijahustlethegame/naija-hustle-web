@@ -1,0 +1,213 @@
+/*
+ * The play screen's controls (dock) and pop-up sheets.
+ * Everything is scoped under .game so it wins over older rules without !important.
+ *
+ * Rule of thumb: nothing here floats over the street while you are playing.
+ *  - Desktop / tablet: the dock sits in the page under the street; sheets open in the page above the dock.
+ *  - Phone, portrait: same, but compact (2-3 buttons per row); sheets are bottom sheets that leave the street visible.
+ *  - Phone, landscape: the street is sized by screen height and the dock becomes a column beside it.
+ */
+
+/* ---------- the street ---------- */
+.game { position: relative; }
+.game .frame { border-width: 3px; border-radius: 14px; box-shadow: 4px 4px 0 var(--tar); }
+.game .sound-row { margin-top: 10px; }
+.game .rotate-hint { margin-top: 6px; font-size: 0.9rem; line-height: 1.3; }
+@media (min-width: 701px) { .game .frame { border-width: 4px; border-radius: 18px; box-shadow: 8px 8px 0 var(--tar); } }
+/* big screens: leave room under the street so the dock is on screen without scrolling */
+@media (min-width: 701px) and (min-height: 521px) {
+  .game .frame { width: min(100%, calc((100vh - 340px) * 16 / 9)); width: min(100%, calc((100dvh - 340px) * 16 / 9)); min-width: min(100%, 560px); margin-inline: auto; }
+}
+
+/* ---------- the dock ---------- */
+.game .dock {
+  position: static; inset: auto; transform: none; z-index: auto;
+  display: block; width: auto; max-width: none; height: auto; max-height: none; overflow: visible;
+  margin: 14px 0 0; padding: 10px; background: var(--paper);
+  border: 3px solid var(--tar); border-radius: 16px; box-shadow: 4px 4px 0 var(--tar);
+}
+.game .dock-row { display: flex; flex-wrap: wrap; gap: 10px; align-items: stretch; margin: 0; padding: 0; }
+
+.game .dock-cash { flex: 1 1 200px; display: flex; flex-direction: column; justify-content: center; gap: 2px; min-width: 0; }
+.game .dock-cash > span { display: flex; align-items: baseline; gap: 8px; line-height: 1.1; }
+.game .dock-cash small { font-size: 0.8rem; font-weight: 700; }
+.game .dock-cash strong { font-family: var(--display); font-weight: 400; font-size: 1.7rem; line-height: 1; }
+.game .dock-step { margin: 0; font-size: 0.9rem; font-weight: 700; line-height: 1.25; }
+
+.game .dock-btn {
+  appearance: none; flex: 1 1 150px; width: auto; height: auto; min-width: 0; min-height: 52px; margin: 0; padding: 8px 12px;
+  display: flex; flex-direction: column; justify-content: center; gap: 2px; position: relative;
+  font: inherit; color: var(--tar); text-align: left; text-decoration: none; cursor: pointer;
+  background: var(--paper); border: 3px solid var(--tar); border-radius: 14px; box-shadow: 0 4px 0 var(--tar);
+}
+.game .dock-btn small { display: flex; align-items: center; gap: 6px; font-size: 0.75rem; font-weight: 700; line-height: 1.2; opacity: 0.85; }
+.game .dock-btn strong { font-size: 0.98rem; line-height: 1.15; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.game .dock-btn:active:not(:disabled) { transform: translateY(3px); box-shadow: 0 1px 0 var(--tar); }
+.game .dock-btn.done { background: #e3f6ea; border-color: var(--go); box-shadow: 0 4px 0 var(--go); }
+.game .dock-btn .meter { display: block; height: 5px; margin-top: 3px; border-radius: 3px; background: rgba(27, 27, 34, 0.15); overflow: hidden; }
+.game .dock-btn .meter i { display: block; height: 100%; background: var(--go); }
+
+/* the little "1", "2" or tick. (leaderboard.css also has a .step for the podium, so reset it fully.) */
+.game .dock-btn .step {
+  position: static; flex: none; display: inline-grid; place-items: center; width: 1.2rem; height: 1.2rem; min-width: 0; min-height: 0;
+  padding: 0; margin: 0; background: none; border: 2px solid currentColor; border-radius: 50%; box-shadow: none;
+  font-size: 0.7rem; line-height: 1;
+}
+
+/* the next thing to do gets a soft ring */
+@keyframes dock-nudge { 50% { box-shadow: 0 4px 0 var(--tar), 0 0 0 5px rgba(228, 56, 47, 0.45); } }
+.game .dock-btn.blink { animation: dock-nudge 1.8s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { .game .dock-btn.blink { animation: none; box-shadow: 0 4px 0 var(--tar), 0 0 0 4px rgba(228, 56, 47, 0.45); } }
+
+.game .dock-play { flex: 1.3 1 170px; align-items: center; text-align: center; background: #d9d6c8; color: #6e6a5c; border-color: #6e6a5c; box-shadow: 0 4px 0 #8a8672; cursor: not-allowed; min-height: 58px; }
+.game .dock-play small { opacity: 0.9; justify-content: center; }
+.game .dock-play strong { font-family: var(--display); font-weight: 400; font-size: 1.6rem; letter-spacing: 0.03em; }
+.game .dock-play:not(:disabled) { background: var(--red); color: #fff; border-color: var(--tar); box-shadow: 0 4px 0 var(--tar); cursor: pointer; }
+.game .dock-play.ready:not(:disabled) { background: var(--go); }
+
+.game .dock-btn.mini { flex: 1 1 110px; min-height: 48px; align-items: center; text-align: center; padding: 6px 8px; }
+.game .dock-btn.mini > span { font-size: 0.85rem; font-weight: 700; line-height: 1.15; }
+.game .dock-btn.mini small { justify-content: center; font-size: 0.7rem; }
+.game .dock-btn.mini.cash { background: #fff2b8; }
+
+.game .dock-why { margin: 8px 0 0; font-size: 0.9rem; font-weight: 700; color: var(--red); }
+.game .banked { margin: 8px 14px 12px; }
+
+/* on the road: cash, tray count, leave, then what is left on the tray */
+.game .dock-row.road { display: grid; grid-template-columns: auto auto minmax(0, 1fr); gap: 8px; align-items: stretch; }
+.game .dock-stat { display: flex; flex-direction: column; justify-content: center; min-width: 0; padding: 4px 10px; background: #fff7d6; border: 3px solid var(--tar); border-radius: 12px; line-height: 1.1; }
+.game .dock-stat small { font-size: 0.75rem; font-weight: 700; }
+.game .dock-stat strong { font-family: var(--display); font-weight: 400; font-size: 1.45rem; white-space: nowrap; }
+.game .dock-stat.empty { border-color: var(--red); color: var(--red); }
+.game .dock-tray { grid-column: 1 / -1; order: 3; display: flex; flex-wrap: wrap; gap: 6px; list-style: none; margin: 0; padding: 0; }
+.game .dock-tray li { padding: 2px 9px; background: var(--danfo); border: 2px solid var(--tar); border-radius: 999px; font-size: 0.9rem; font-weight: 700; }
+.game .dock-tray li.gone { background: var(--paper); opacity: 0.4; }
+.game .dock-btn.leave { flex: 1 1 150px; align-items: center; justify-content: center; padding: 8px 16px; background: var(--red); color: #fff; border-color: var(--tar); }
+
+/* ---------- sheets (location, tray, invite): in the page on big screens ---------- */
+.game .sheet {
+  position: static; inset: auto; transform: none; z-index: auto; width: auto; max-width: none; max-height: none;
+  margin: 0 0 12px; padding: 0; overflow: hidden; background: #fffdf3;
+  border: 3px solid var(--tar); border-radius: 14px; box-shadow: none;
+}
+.game .sheet-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 8px 8px 14px; background: var(--danfo); border-bottom: 3px solid var(--tar); }
+.game .sheet-head h2 { margin: 0; font-size: 1.35rem; }
+.game .sheet-head .cap { margin-left: 6px; font: 700 0.9rem var(--body); }
+.game .sheet-x { flex: none; width: 44px; height: 44px; display: grid; place-items: center; font: 700 1.1rem var(--body); color: var(--tar); background: var(--paper); border: 3px solid var(--tar); border-radius: 12px; cursor: pointer; }
+.game .sheet > :not(.sheet-head):not(.sheet-foot) { margin-left: 14px; margin-right: 14px; }
+.game .sheet > .picker, .game .sheet > .tray-grid { margin-top: 12px; margin-bottom: 12px; }
+.game .sheet-foot { display: flex; flex-wrap: wrap; gap: 8px; padding: 10px 14px; background: var(--paper); border-top: 3px solid var(--tar); }
+.game .sheet-foot .btn { flex: 1 1 0; padding: 10px 14px; font-size: 0.95rem; white-space: nowrap; }
+
+.game .picker { display: grid; gap: 10px; grid-template-columns: 1fr; }
+@media (min-width: 701px) { .game .picker { grid-template-columns: repeat(3, 1fr); } }
+.game .pick { padding: 10px 12px; gap: 2px; }
+.game .pick > span:not(.meta) { font-size: 0.9rem; line-height: 1.25; }
+.game .pick strong { font-size: 1.2rem; line-height: 1.1; }
+.game .pick .meta { font-size: 0.8rem; line-height: 1.25; }
+
+.game .tray-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; list-style: none; padding: 0; }
+@media (min-width: 560px) { .game .tray-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+.game .tray-card { display: grid; grid-template-columns: auto 1fr; column-gap: 8px; row-gap: 2px; align-items: center; padding: 8px 10px; background: var(--paper); border: 3px solid var(--tar); border-radius: 12px; }
+.game .tray-card.has { background: #fff2b8; }
+.game .tray-card.locked { background: #e6e2d2; border-style: dashed; opacity: 0.85; }
+.game .tray-card .big { grid-row: span 2; font-size: 1.6rem; line-height: 1; }
+.game .tray-card strong { font-size: 0.95rem; line-height: 1.1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.game .tray-card small { grid-column: 2; font-size: 0.75rem; line-height: 1.2; }
+.game .tray-card .qty { grid-column: 1 / -1; justify-content: space-between; margin-top: 4px; }
+.game .step-btn { width: 44px; height: 44px; display: grid; place-items: center; font: 700 1.3rem var(--body); color: var(--tar); background: var(--paper); border: 3px solid var(--tar); border-radius: 12px; box-shadow: 0 3px 0 var(--tar); cursor: pointer; }
+.game .step-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+.game .step-btn:active:not(:disabled) { transform: translateY(2px); box-shadow: 0 1px 0 var(--tar); }
+
+/* ---------- the site nav on the play page (4 links overflowed a 375px screen) ---------- */
+@media (max-width: 420px) {
+  .nav:has(+ .page > .game) { padding: 10px 12px; gap: 6px; }
+  .nav:has(+ .page > .game) .brand { font-size: 1.25rem; gap: 6px; }
+  .nav:has(+ .page > .game) nav a { padding: 8px 6px; font-size: 0.88rem; }
+}
+
+/* ---------- phone, portrait: compact dock under the street, bottom sheets ---------- */
+@media (max-width: 700px) {
+  .page:has(> .game) { padding: 8px 12px 24px; }
+  .game .dock { margin-top: 10px; padding: 8px; border-radius: 14px; }
+  .game .dock-row { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px; }
+  .game .dock-cash { grid-column: 1 / -1; flex-direction: row; align-items: baseline; justify-content: space-between; gap: 10px; }
+  .game .dock-step { text-align: right; font-size: 0.85rem; }
+  .game .dock-btn { flex: none; }
+  .game .dock-where, .game .dock-load { grid-column: span 3; }
+  .game .dock-play { grid-column: 1 / -1; order: 3; }
+  .game .dock-where { order: 1; } .game .dock-load { order: 2; }
+  .game .dock-market, .game .dock-sellers, .game .dock-invite { grid-column: span 2; }
+  .game .dock-market { order: 4; } .game .dock-sellers { order: 5; } .game .dock-invite { order: 6; }
+  .game .dock-row.road { grid-template-columns: auto auto minmax(0, 1fr); }
+  .game .sound-row { margin-top: 8px; }
+  .game .sound-btn { padding: 5px 12px; font-size: 0.85rem; }
+  .game .rotate-hint { margin-top: 6px; font-size: 0.8rem; }
+
+  /* bottom sheet: never taller than about 2/3 of the screen, scrolls inside, head and buttons stay put */
+  .game .sheet {
+    position: fixed; left: 0; right: 0; bottom: 0; top: auto; z-index: 60; margin: 0;
+    max-height: 64vh; max-height: 64dvh; overflow-y: auto; overscroll-behavior: contain;
+    border-width: 3px 0 0; border-radius: 20px 20px 0 0; box-shadow: 0 -10px 0 rgba(27, 27, 34, 0.18);
+  }
+  .game .sheet-head { position: sticky; top: 0; z-index: 2; }
+  .game .sheet-foot { position: sticky; bottom: 0; z-index: 2; padding-bottom: calc(10px + env(safe-area-inset-bottom)); }
+  .game .sheet > .picker, .game .sheet > .tray-grid { margin-bottom: 14px; }
+}
+@media (max-width: 380px) {
+  .game .dock-btn strong { font-size: 0.9rem; }
+  .game .dock-btn.mini > span { font-size: 0.78rem; }
+  .game .dock-play strong { font-size: 1.4rem; }
+}
+
+/* ---------- phone, landscape: street sized by screen height, dock beside it ---------- */
+@media (orientation: landscape) and (max-height: 520px) {
+  .page:has(> .game) { padding: 6px 12px 10px; }
+  .game {
+    display: grid; gap: 8px 12px; align-items: start;
+    grid-template-columns: min(66%, calc((100vh - 84px) * 16 / 9)) minmax(0, 1fr);
+    grid-template-columns: min(66%, calc((100dvh - 84px) * 16 / 9)) minmax(0, 1fr);
+  }
+  .game > .frame { grid-column: 1; grid-row: 1 / span 3; width: 100%; }
+  .game > .dock { grid-column: 2; grid-row: 1; margin: 0; max-height: calc(100vh - 106px); max-height: calc(100dvh - 106px); overflow-y: auto; }
+  .game > .sound-row { grid-column: 2; grid-row: 2; margin: 0; justify-content: flex-start; }
+  .game > .rotate-hint { display: none; }
+  .game > p.why { grid-column: 2; }
+  .game .sound-btn { padding: 4px 10px; font-size: 0.85rem; }
+
+  .nav:has(+ .page > .game) { padding: 4px 14px; }
+  .nav:has(+ .page > .game) .brand { font-size: 1.3rem; }
+  .nav:has(+ .page > .game) .brand .mark { height: 26px; width: auto; }
+  .nav:has(+ .page > .game) nav a { padding: 5px 10px; }
+
+  .game .dock { padding: 6px; }
+  .game .dock-row { display: flex; flex-direction: row; flex-wrap: wrap; gap: 6px; }
+  .game .dock-cash { flex-direction: row; justify-content: space-between; align-items: baseline; }
+  .game .dock-cash strong { font-size: 1.35rem; }
+  .game .dock-step { display: none; }
+  .game .dock-btn { min-height: 38px; padding: 3px 10px; gap: 0; box-shadow: 0 3px 0 var(--tar); }
+  .game .dock-btn .meter { display: none; }
+  .game .dock-row > * { flex: 1 1 100%; }
+  .game .dock-play { min-height: 44px; order: 3; }
+  .game .dock-play strong { font-size: 1.35rem; }
+  .game .dock-where { order: 1; } .game .dock-load { order: 2; }
+  .game .dock-market { order: 4; } .game .dock-sellers { order: 5; } .game .dock-invite { order: 6; }
+  .game .dock-row > .dock-btn.mini { flex: 1 1 calc(33.3% - 6px); min-height: 38px; padding: 2px 4px; }
+  .game .dock-btn.mini > span { font-size: 0.78rem; }
+  .game .dock-btn.mini small { display: none; } /* the Sellers button still turns yellow when money is waiting */
+  .game .dock-row.road { display: flex; flex-direction: row; flex-wrap: wrap; }
+  .game .dock-row.road > .dock-stat { flex: 1 1 calc(50% - 6px); }
+  .game .dock-row.road > .dock-btn.leave { flex: 1 1 100%; min-height: 44px; order: 4; }
+  .game .dock-row.road > .dock-tray { flex: 1 1 100%; order: 3; }
+
+  /* sheet: a panel on the right, so the street stays visible on the left */
+  .game .sheet {
+    position: fixed; z-index: 60; margin: 0; overflow-y: auto; overscroll-behavior: contain;
+    left: auto; right: 0; top: 0; bottom: 0; width: min(54vw, 440px); max-height: none;
+    border-width: 0 0 0 3px; border-radius: 18px 0 0 18px; box-shadow: -8px 0 0 rgba(27, 27, 34, 0.18);
+  }
+  .game .picker { grid-template-columns: 1fr; }
+  .game .tray-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .game .sheet-head { position: sticky; top: 0; z-index: 2; padding-top: calc(8px + env(safe-area-inset-top)); }
+  .game .sheet-foot { position: sticky; bottom: 0; z-index: 2; }
+}
