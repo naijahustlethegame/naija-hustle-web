@@ -3,14 +3,6 @@ import Nav from "@/components/Nav";
 import GameView from "@/components/GameView";
 import SellersCanvas from "@/components/SellersCanvas";
 
-const BUYERS = [
-  ["Okada riders", "Water and snacks. Small money, but they are everywhere."],
-  ["Keke drivers", "Water, drinks and snacks. A friendly crowd."],
-  ["Danfo conductors", "Snacks first. Medium pay."],
-  ["Office cars", "Cold drinks, and sometimes a gadget."],
-  ["Jeeps", "Gadgets. They pay almost double, but rarely buy."],
-];
-
 export default function Home() {
   return (
     <>
@@ -41,39 +33,32 @@ export default function Home() {
         </div>
 
         <section className="sec">
-          <h2>How a red light plays</h2>
+          <h2>How to play</h2>
           <ol className="steps">
             <li className="red">
               <span className="n">1</span>
-              <h3>The light turns red</h3>
-              <p>Cars stop and wait. Tap a car and run to it. Be quick!</p>
+              <h3>Red light: cars stop</h3>
+              <p>When the light is red, the cars stop and wait. Tap a car to run to it.</p>
             </li>
             <li className="amber">
               <span className="n">2</span>
-              <h3>Read the window</h3>
-              <p>A hand out means they may buy. A closed window usually means no. Take their price, or ask for more and risk it.</p>
+              <h3>Sell to the driver</h3>
+              <p>If the driver puts a hand out of the window, they want to buy. Tap to sell. If the window is shut, they will not buy.</p>
             </li>
             <li className="green">
               <span className="n">3</span>
-              <h3>Clear out before green</h3>
-              <p>When the light flashes yellow, run to the pavement. Moving cars knock you down and you lose money and stock.</p>
+              <h3>Run away before green</h3>
+              <p>When the light turns yellow, run to the side of the road. When it is green the cars go. If a car hits you, you lose money.</p>
             </li>
           </ol>
         </section>
 
-        <section className="sec split">
-          <div>
-            <h2>Not everybody buys</h2>
-            <p>
-              A hand out helps, but nobody is sure to buy. Rain means fewer buyers.
-              Hot sun makes everyone want cold water.
-            </p>
-          </div>
-          <dl className="buyers">
-            {BUYERS.map(([who, what]) => (
-              <div key={who}><dt>{who}</dt><dd>{what}</dd></div>
-            ))}
-          </dl>
+        <section className="sec">
+          <h2>Not everybody buys</h2>
+          <p>
+            A hand out helps, but nobody is sure to buy. Rain means fewer buyers.
+            Hot sun makes everyone want cold water.
+          </p>
         </section>
 
         <section className="crew">

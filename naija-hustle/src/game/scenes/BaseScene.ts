@@ -1,4 +1,5 @@
 import { drawAvatar } from "../avatar/avatar";
+import { sfx } from "../audio/sfx";
 import { SPEC, makeBuyer, pickColor, pickKind } from "../engine/buyers";
 import { drawLight, drawVehicle, renderBackdrop, type LightState, type VehView } from "../engine/draw";
 import { JUNCTIONS } from "../engine/junctions";
@@ -20,15 +21,25 @@ export class BaseScene {
   private cars: Car[] = []; private workers: Worker[] = []; private pops: Pop[] = [];
   private t = 0; private nextId = 1; private light: LightState = "green"; private phaseT = 4;
 
-  constructor(private canvas: HTMLCanvasElement) {
+  constructor(private canvas: HTMLCanvasElement, private sound = false) {
     this.ctx = canvas.getContext("2d")!;
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
     canvas.width = W * dpr; canvas.height = H * dpr; this.ctx.scale(dpr, dpr);
     this.bg = renderBackdrop(JUNCTIONS.obalende);
     this.loop = new Loop((dt) => this.update(dt), () => this.draw());
   }
-  start() { this.loop.start(); } pause() { this.loop.stop(); } resume() { this.loop.start(); }
-  destroy() { this.loop.stop(); }
+  start() { this.loop.start(); this.hum(true); }
+  pause() { this.loop.stop(); this.hum(false); }
+  resume() { this.loop.start(); this.hum(true); }
+  destroy() { this.loop.stop(); this.hum(false); }
+
+  /** Street hum under the corner. Only on the sellers page (`sound`), never on the quiet homepage. */
+  private hum(on: boolean) {
+    if (!this.sound) return;
+    if (on) sfx.configure({ defaultOn: true, level: 1 });
+    sfx.ambience(on);
+  }
+  private fx(f: () => void) { if (this.sound) f(); }
 
   setSellers(ids: string[]) {
     const have = new Map(this.workers.map((w) => [w.def.id, w]));
@@ -42,6 +53,7 @@ export class BaseScene {
 
   private startRed() {
     this.light = "red"; this.phaseT = 15; this.cars = [];
+    this.fx(() => sfx.pass("car", 0.6)); // the queue rolls up
     LANE_Y.slice(0, 2).forEach((ly, lane) => {
       let front = STOP_X - 6, leader: Car | null = null;
       for (let k = 0; k < 4; k++) {
@@ -59,8 +71,20 @@ export class BaseScene {
     this.t += dt; this.phaseT -= dt;
     if (this.phaseT <= 0) {
       if (this.light === "green") this.startRed();
-      else if (this.light === "red") { this.light = "yellow"; this.phaseT = 2; }
-      else { this.light = "green"; this.phaseT = 7; for (const c of this.cars) if (c.st === "stopped") { c.st = "leaving"; c.vx = 20 + Math.random() * 40; } }
+      else if (this.light === "red") {
+        this.light = "yellow"; this.phaseT = 2;
+        this.fx(() => { sfx.tick(); setTimeout(() => sfx.tick(), 700); setTimeout(() => sfx.tick(), 1400); });
+        const front = this.cars.filter((c) => c.st === "stopped")[0]; // horns only once the light is nearly green
+        if (front) this.fx(() => sfx.horn(front.kind, front.x, 0.6));
+      }
+      else {
+        this.light = "green"; this.phaseT = 7; let n = 0;
+        this.fx(() => sfx.go());
+        for (const c of this.cars) if (c.st === "stopped") {
+          c.st = "leaving"; c.vx = 20 + Math.random() * 40;
+          if (n++ < 3) { const k = c.kind, x = c.x; this.fx(() => sfx.rev(k, x, 0.7)); }
+        }
+      }
     }
     for (const c of this.cars) {
       if (c.st === "arriving") {
@@ -79,14 +103,15 @@ export class BaseScene {
         const d = Math.hypot(tx - w.x, ty - w.y);
         if (d < 8) {
           c.sold = true; w.target = null; w.wait = 1 + Math.random();
-          if (c.taken) this.pops.push({ x: c.x, y: c.y - 30, t: 0, text: "No thanks" });
-          else this.pops.push({ x: c.x, y: c.y - 30, t: 0, text: "Sold!" });
+          if (c.taken) { this.pops.push({ x: c.x, y: c.y - 30, t: 0, text: "No thanks" }); this.fx(() => sfx.nope()); }
+          else { this.pops.push({ x: c.x, y: c.y - 30, t: 0, text: "Sold!" }); this.fx(() => sfx.cashier(0.7, c.x)); }
         } else { w.x += ((tx - w.x) / d) * 200 * dt; w.y += ((ty - w.y) / d) * 200 * dt; }
       } else if (this.light === "red") {
         w.wait -= dt;
         if (w.wait <= 0) {
           const free = this.cars.filter((c) => c.st === "stopped" && !c.sold && !this.workers.some((o) => o !== w && o.target === c));
           w.target = free.length ? free[Math.floor(Math.random() * free.length)] : null; w.wait = 0.3;
+          if (w.target) this.fx(() => sfx.pickup());
         }
       } else {
         // green: everybody back to the pavement

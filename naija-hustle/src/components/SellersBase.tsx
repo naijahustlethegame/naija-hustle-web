@@ -1,6 +1,8 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
 import SellersCanvas from "@/components/SellersCanvas";
+import SoundToggle from "@/components/SoundToggle";
+import { sfx } from "@/game/audio/sfx";
 import { naira } from "@/game/engine/items";
 import { MAX_AWAY_MIN, SELLERS, pendingFor, pendingTotal } from "@/game/sellers";
 import { defaultSave, type SaveData } from "@/lib/storage";
@@ -28,16 +30,17 @@ export default function SellersBase() {
   const hire = (id: string) => {
     const def = SELLERS.find((s) => s.id === id);
     if (!def || save.money < def.price || save.sellers.some((s) => s.id === id)) return;
-    void act(async () => { const r = await api.hire(id); setSave((s) => ({ ...s, money: r.money, sellers: [...s.sellers, { id, since: Date.now() }] })); });
+    void act(async () => { const r = await api.hire(id); setSave((s) => ({ ...s, money: r.money, sellers: [...s.sellers, { id, since: Date.now() }] })); sfx.fanfare(); });
   };
   const collect = () => {
     if (waiting <= 0) return;
-    void act(async () => { const r = await api.collect(), t = Date.now(); setSave((s) => ({ ...s, money: r.money, sellers: s.sellers.map((h) => ({ ...h, since: t })) })); setNow(t); });
+    void act(async () => { const r = await api.collect(), t = Date.now(); setSave((s) => ({ ...s, money: r.money, sellers: s.sellers.map((h) => ({ ...h, since: t })) })); setNow(t); sfx.cashier(1); setTimeout(() => sfx.coin(), 250); setTimeout(() => sfx.coin(), 400); });
   };
 
   return (
     <>
-      <SellersCanvas ids={ids} />
+      <SellersCanvas ids={ids} sound />
+      <SoundToggle />
       <section className="panel" aria-label="Collect earnings">
         <div className="panel-head">
           <h2>Your sellers</h2>

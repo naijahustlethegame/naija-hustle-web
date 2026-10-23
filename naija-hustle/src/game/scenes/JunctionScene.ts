@@ -493,7 +493,10 @@ export class JunctionScene {
     if (this.lastT > 0) this.lastT -= dt;
     if (this.stockPulse > 0) this.stockPulse -= dt;
     this.evT += dt;
-    if (this.ev?.kind === "goslow" && (this.phase !== "green" || this.holding) && (this.honkT -= dt) <= 0) {
+    // Quiet while the cars wait at red. Horns only start once the light is nearly green (yellow),
+    // or after a short pause in a go-slow that is stuck on green.
+    const honkNow = this.phase === "yellow" || (this.phase === "green" && this.holding && this.greenT > 1.2);
+    if (this.ev?.kind === "goslow" && honkNow && (this.honkT -= dt) <= 0) {
       this.honkT = 0.7 + Math.random() * 1.1; // a go-slow means horns
       const stopped = this.vehs.filter((v) => v.st === "stopped");
       if (stopped.length) { const v = pickOne(stopped); this.pops.push({ x: v.x, y: v.y - v.h / 2 - 12, t: 0, text: pickOne(["Pam pam!", "Peeen!", "Oya move!"]), color: "#ffd84a" }); sfx.horn(v.kind, v.x, 0.9); }

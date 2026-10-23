@@ -3,7 +3,7 @@ import { useEffect, useRef } from "react";
 import type { BaseScene } from "@/game/scenes/BaseScene";
 
 /** The corner where hired sellers work on their own. `ids` are the sellers on shift. */
-export default function SellersCanvas({ ids }: { ids: string[] }) {
+export default function SellersCanvas({ ids, sound = false }: { ids: string[]; sound?: boolean }) {
   const ref = useRef<HTMLCanvasElement>(null);
   const sceneRef = useRef<BaseScene | null>(null);
   const idsRef = useRef(ids);
@@ -15,7 +15,7 @@ export default function SellersCanvas({ ids }: { ids: string[] }) {
     let dead = false;
     Promise.all([import("@/game/scenes/BaseScene"), document.fonts.load("24px Anton").catch(() => [])]).then(([{ BaseScene }]) => {
       if (dead) return;
-      const s = new BaseScene(canvas);
+      const s = new BaseScene(canvas, sound);
       sceneRef.current = s; s.setSellers(idsRef.current); s.start();
       const io = new IntersectionObserver(([e]) => (e.isIntersecting ? s.resume() : s.pause()));
       io.observe(canvas);
