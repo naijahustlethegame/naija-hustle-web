@@ -42,6 +42,8 @@ class Sfx {
   subscribe = (fn: () => void) => { this.listeners.add(fn); return () => { this.listeners.delete(fn); }; };
   private emit() { this.listeners.forEach((f) => f()); }
   isOn() { return (this.pref ?? (this.defaultOn ? "on" : "off")) === "on"; }
+  /** 0 when muted, otherwise the scene's level (the homepage is softer). Lets the car radio follow the same rules. */
+  gain() { return this.isOn() ? this.level : 0; }
 
   /** What a scene wants when the person has not chosen yet, and how loud it should be. */
   configure(o: { defaultOn: boolean; level: number }) {

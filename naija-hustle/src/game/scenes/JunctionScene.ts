@@ -1,4 +1,5 @@
 import { sfx } from "../audio/sfx";
+import { carRadio, type RadioStation } from "../audio/carRadio";
 import { drawAvatar, type AvatarConfig } from "../avatar/avatar";
 import { NO_LINES, PUSH_FAIL_LINES, SPEC, YES_LINES, makeBuyer, pickColor, pickKind } from "../engine/buyers";
 import { OFFICER_SPOTS, drawOfficer, drawRoadWater, drawWeatherFront, drawWeatherTint } from "../engine/weather";
@@ -84,6 +85,8 @@ export class JunctionScene {
   private streak = 0; private jumped = false;
   private cur: Stats = zero(); private last: Stats | null = null; private lastT = 0;
   private stockPulse = 0; private evT = 0; private honkT = 1;
+  // car radio: this light may give one car a station. It starts once the car is close enough to be heard.
+  private radioV: Veh | null = null; private radioSt: RadioStation | null = null; private radioOn = false;
 
   // player
   private px = 300; private py = HOME_Y; private pstate: PState = "idle";
@@ -169,9 +172,9 @@ export class JunctionScene {
   }
 
   start() { this.loop.start(); sfx.ambience(true); }
-  pause() { this.loop.stop(); sfx.ambience(false); sfx.rain(false); }
+  pause() { this.loop.stop(); sfx.ambience(false); sfx.rain(false); this.endRadio(true); }
   resume() { this.loop.start(); this.needSync = true; sfx.ambience(true); } // the light moved on while we were away
-  destroy() { sfx.ambience(false); sfx.rain(false); this.opts.sync?.flush(true); this.net?.close(); this.loop.stop(); this.canvas.removeEventListener("pointerdown", this.onTap); this.listeners.clear(); }
+  destroy() { sfx.ambience(false); sfx.rain(false); this.endRadio(true); this.opts.sync?.flush(true); this.net?.close(); this.loop.stop(); this.canvas.removeEventListener("pointerdown", this.onTap); this.listeners.clear(); }
 
   // ---------- React bridge ----------
   subscribe = (fn: () => void) => { this.listeners.add(fn); return () => { this.listeners.delete(fn); }; };
@@ -280,11 +283,13 @@ export class JunctionScene {
     }
     sfx.rain(this.ev.kind === "rain");
     if (this.ev.kind === "lastma" && (this.playing || this.demo)) setTimeout(() => sfx.whistle(), 700);
+    this.endRadio(); // the last light's radio car is gone by now; let it fade
     this.cur = zero(); this.jumped = false; this.vehs = []; this.pops = [];
     this.haggle = null; this.claimV = null; if (this.pstate === "running" || this.pstate === "haggle" || this.pstate === "wait") this.pstate = "idle"; this.target = null;
     if (phase !== "green") {
       if (!rolled) this.ambient = [];
       this.buildQueue(rng);
+      this.pickRadioCar();
       let el = Math.min(local, 16); // joined late: the cars have already pulled up, and the later ones are still rolling in
       while (el > 0) { const s = Math.min(0.05, el); this.updateTraffic(s); el -= s; }
       if (this.playing || this.demo) this.bannerT = Math.max(0.1, 4 - local);
@@ -323,6 +328,42 @@ export class JunctionScene {
         this.vehs.push(v); leader = v;
       }
     });
+  }
+
+  // ---------- car radio ----------
+  /** Once per red light. Most lights get nothing; carRadio decides, and rests between plays. Bikes have no radio. */
+  private pickRadioCar() {
+    const pool = this.vehs.filter((v) => v.kind !== "okada");
+    const st = pool.length ? carRadio.tryStart() : null;
+    if (!st) return;
+    this.radioV = pickOne(pool); this.radioSt = st; this.radioOn = false;
+  }
+
+  /** Louder as the car rolls in, full while it waits, fading as it drives off. */
+  private updateRadio() {
+    const v = this.radioV; if (!v) return;
+    if (!this.vehs.includes(v)) { this.endRadio(); return; }
+    const k = v.st === "leaving"
+      ? Math.max(0, 1 - (v.x - v.slotX) / (W * 0.75 - v.slotX))
+      : Math.max(0, Math.min(1, (v.x + v.w / 2) / (v.slotX + v.w / 2)));
+    if (!this.radioOn) {
+      if (k < 0.1 || !this.radioSt) return;
+      carRadio.play(this.radioSt); this.radioOn = true;
+    }
+    carRadio.setLoudness(k * k);
+  }
+
+  private endRadio(immediate = false) {
+    this.radioV = null; this.radioSt = null; this.radioOn = false;
+    carRadio.stop(immediate);
+  }
+
+  /** A small note over the car with the station's name, so you can tell whose radio it is. */
+  private drawRadioTag() {
+    const v = this.radioV; if (!v || !this.radioOn || !this.radioSt || !carRadio.playing) return;
+    const name = this.radioSt.name.length > 22 ? this.radioSt.name.slice(0, 21) + "…" : this.radioSt.name;
+    const bob = Math.sin(this.t * 3 + v.id) * 2;
+    this.text(`♪ ${name}`, v.x, v.y - v.h / 2 - 42 + bob, 15, "#9fd8ff", "center");
   }
 
   private goGreen() {
@@ -526,6 +567,7 @@ export class JunctionScene {
     if (this.botOn()) this.botUpdate(dt);
     this.updateAmbient(dt);
     if (this.vehs.length) this.updateTraffic(dt);
+    this.updateRadio();
     if (this.playing) this.updatePlayer(dt);
     if (this.demo && this.net && this.peers.size === 0 && (this.rejoinT -= dt) <= 0) { this.rejoinT = 5; this.net.join({ play: false }); } // look for a busier road
     for (const q of this.peers.values()) { const k = Math.min(1, dt * 10); q.x += (q.tx - q.x) * k; q.y += (q.ty - q.y) * k; }
@@ -701,6 +743,7 @@ export class JunctionScene {
 
     drawWeatherFront(c, wkind, this.t, wk);
     this.drawTells();
+    this.drawRadioTag();
     this.drawPops();
     if (this.haggle) this.drawHaggle(this.haggle);
     this.drawHud();
