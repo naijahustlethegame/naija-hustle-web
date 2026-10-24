@@ -260,3 +260,33 @@ h3 { font-size: 1.5rem; }
 .dock-tray .gone { opacity: 0.4; }
 .dock-why { margin: 8px 0 0; font-weight: 700; }
 .dock > .dock-why { padding: 8px 12px; border-radius: 12px; background: var(--red); color: #fff; }
+
+/* sellers page */
+.sellers-top .sum { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin: 0; }
+.sellers-top .sum div { border: 3px solid var(--tar); border-radius: 14px; padding: 10px 12px; background: #fff6d6; }
+.sellers-top .sum .wait { background: var(--danfo); }
+.sellers-top dt { font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; }
+.sellers-top dd { font-family: var(--display); font-size: 1.8rem; line-height: 1.1; }
+@media (max-width: 560px) { .sellers-top .sum { grid-template-columns: 1fr; } .sellers-top dd { font-size: 1.5rem; } }
+.shift { margin-top: 14px; }
+.shift-bar { height: 12px; border: 3px solid var(--tar); border-radius: 99px; background: #fff; overflow: hidden; }
+.shift-bar i { display: block; height: 100%; background: var(--go); transition: width 0.5s; }
+.shift-bar i.full { background: var(--red); }
+.shift p { margin-top: 6px; font-size: 0.95rem; font-weight: 700; }
+.collect .btn.big { font-size: 1.25rem; padding: 16px 28px; }
+.collect .btn.blink { animation: nudge 1s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { .collect .btn.blink { animation: none; } }
+.hire-grid { list-style: none; padding: 0; display: grid; gap: 14px; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); margin-top: 10px; }
+.hire-card { display: grid; grid-template-columns: 3rem 1fr; gap: 6px 12px; align-items: start; padding: 14px; border: 3px solid var(--tar); border-radius: 16px; background: #fff; }
+.hire-card.owned { background: #e8f7ee; }
+.hire-card.best { background: var(--danfo); box-shadow: 4px 4px 0 var(--tar); }
+.hire-card .btn, .hire-card .working { grid-column: 1 / -1; text-align: center; }
+.hire-card .btn { padding: 12px 18px; }
+.badge { display: grid; place-items: center; width: 3rem; height: 3rem; border-radius: 50%; border: 3px solid var(--tar); color: #fff; font-family: var(--display); font-size: 1.5rem; text-shadow: 0 1px 0 rgba(0,0,0,.4); }
+.hire-main h3 { font-size: 1.4rem; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.hire-main .skill { font: 700 0.7rem var(--body); text-transform: uppercase; letter-spacing: 0.06em; padding: 2px 8px; border: 2px solid var(--tar); border-radius: 99px; background: #fff; }
+.hire-blurb { margin: 2px 0 8px; font-size: 0.95rem; }
+.hire-facts { display: flex; gap: 18px; flex-wrap: wrap; margin: 0; }
+.hire-facts dt { font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; }
+.hire-facts dd { font-family: var(--display); font-size: 1.25rem; line-height: 1.1; }
+.working { color: var(--go); font-weight: 700; padding: 10px 0 2px; }
