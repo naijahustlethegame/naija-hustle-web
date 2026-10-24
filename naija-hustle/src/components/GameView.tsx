@@ -91,15 +91,15 @@ function Controls({ scene, snap, unlocks, sellers, beforeBuy, onBought }: { scen
   useEffect(() => { if (snap.playing) setOpen(null); }, [snap.playing]);
   useEffect(() => { const t = setInterval(() => setNow(Date.now()), 10000); return () => clearInterval(t); }, []);
 
-  // ---------- on the road: cash, tray, and the way out ----------
+  // ---------- on the road: money, live tray, and the way out ----------
   if (snap.playing) {
     const shown = ITEM_IDS.filter((id) => CORE_ITEMS.includes(id) || snap.stock[id] > 0);
     return (
       <div className="dock" ref={dock} role="region" aria-label="On the road">
         <div className="dock-row road">
-          <div className="dock-stat"><small>Cash</small><strong>{naira(snap.money)}</strong></div>
-          <div className={"dock-stat" + (snap.outOfStock ? " empty" : "")} aria-live="polite"><small>On tray</small><strong>{snap.carrying}</strong></div>
-          <ul className="dock-tray" aria-label="On your tray">
+          <p className="dock-money"><small>Cash</small>{naira(snap.money)}</p>
+          <ul className={"dock-tray" + (snap.outOfStock ? " empty" : "")} aria-live="polite" aria-label="On your tray">
+            <li className="total"><strong>{snap.carrying}</strong><small>on tray</small></li>
             {shown.map((id) => (
               <li key={id} className={snap.stock[id] === 0 ? "gone" : ""}>
                 <span aria-hidden>{ITEMS[id].icon}</span> {snap.stock[id]}<span className="sr"> {ITEMS[id].name}</span>
@@ -199,14 +199,9 @@ function Controls({ scene, snap, unlocks, sellers, beforeBuy, onBought }: { scen
       {open === "invite" && <InviteSheet onClose={() => setOpen(null)} />}
 
       <div className="dock-row">
-        <div className="dock-cash">
-          <span><small>Cash</small><strong>{naira(snap.money)}</strong></span>
-          <p className="dock-step" aria-live="polite">{next === 1 ? "Step 1: choose where to sell" : next === 2 ? "Step 2: load your tray" : "Ready! Press Play"}</p>
-        </div>
-
         <button className={"dock-btn" + (locOk ? " done" : "") + (next === 1 ? " blink" : "")} onClick={() => toggle("loc")} aria-expanded={open === "loc"}>
           <small><span className="step">{locOk ? "✓" : "1"}</span> Location</small>
-          <strong>{locOk ? `📍 ${JUNCTIONS[snap.junction].name}` : "Choose where"}</strong>
+          <strong>{locOk ? `📍 ${JUNCTIONS[snap.junction].name}` : "Choose where to sell"}</strong>
         </button>
 
         <button className={"dock-btn" + (snap.carrying > 0 ? " done" : "") + (next === 2 ? " blink" : "")} onClick={() => toggle("tray")} aria-expanded={open === "tray"}>
@@ -225,13 +220,14 @@ function Controls({ scene, snap, unlocks, sellers, beforeBuy, onBought }: { scen
           <strong>▶ Play</strong>
         </button>
 
+        {/* Second row: two half-width buttons. Sellers turns amber when money is waiting. */}
         <Link className={"dock-btn mini" + (waiting > 0 ? " cash" : "")} href="/sellers">
-          <span>👥 My sellers</span>
+          <span>👥 Sellers</span>
           <small>{sellers.length === 0 ? "Hire your first" : waiting > 0 ? `${naira(waiting)} waiting` : `${sellers.length} hired`}</small>
         </Link>
 
         <button className="dock-btn mini" onClick={() => toggle("invite")} aria-expanded={open === "invite"}>
-          <span>🎁 Invite friends</span>
+          <span>🎁 Invite</span>
           <small>Earn cash</small>
         </button>
       </div>
