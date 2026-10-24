@@ -4,6 +4,7 @@ import { drawAvatar, type AvatarConfig } from "../avatar/avatar";
 import { NO_LINES, PUSH_FAIL_LINES, SPEC, YES_LINES, makeBuyer, pickColor, pickKind } from "../engine/buyers";
 import { OFFICER_SPOTS, drawOfficer, drawRoadWater, drawWeatherFront, drawWeatherTint } from "../engine/weather";
 import { roadEffect } from "../engine/road";
+import { BOOST_SPEED, POWERS, SLOW_SPEED, drawBoostFx, drawFx, drawMud, drawPickup, drawShieldAura, drawStars, drawTrap, type Fx, type Pickup, type PowerKind, type Trap } from "../engine/powerups";
 import { WARN, cycleLength, lightAt, redFor, type LightPhase } from "../engine/clock";
 import { drawLight, drawVehicle, renderBackdrop, type VehView } from "../engine/draw";
 import { GOSLOW, rollRoundEvent, type RoundEvent } from "../engine/events";
@@ -25,7 +26,7 @@ type Veh = VehView & {
   done: boolean; launchIn: number; leader: Veh | null;
   key: string; taken: boolean; // key is the same for everyone in the room; taken = a seller was already chosen
 };
-type Peer = { id: string; name: string; avatar: AvatarConfig; x: number; y: number; tx: number; ty: number; s: string };
+type Peer = { id: string; name: string; avatar: AvatarConfig; x: number; y: number; tx: number; ty: number; s: string; shield?: boolean; boostT?: number; stunT?: number; slowT?: number };
 type Pop = { x: number; y: number; t: number; text: string; color: string };
 type Haggle = { v: Veh; t: number; dur: number };
 type Stats = { sales: number; rejects: number; hits: number; earned: number; bestStreak: number };
@@ -94,6 +95,10 @@ export class JunctionScene {
   private target: Veh | null = null; private haggle: Haggle | null = null;
   private pauseT = 0; private lockT = 0; private inv = 0;
 
+  // power-ups: the server decides everything, the scene just shows it at once
+  private held: PowerKind | null = null; private boostT = 0; private slowT = 0; private stunT = 0;
+  private pickups: Pickup[] = []; private traps: Trap[] = []; private fxs: Fx[] = [];
+
   // multiplayer
   private net: RoomClient | null = null; private roomId: string | null = null; private cap = 6;
   private rejoinT = 5; private peers = new Map<string, Peer>(); private claimV: Veh | null = null; private claimT = 0;
@@ -131,9 +136,122 @@ export class JunctionScene {
       onSnap: (p) => { for (const [id, x, y, s] of p) { const q = this.peers.get(id); if (q) { q.tx = x; q.ty = y; q.s = s; } } },
       onClaimResult: (key, winner) => this.onClaimResult(key, winner),
       onSettled: (key, by, sold, price) => this.onSettled(key, by, sold, price),
+      onMsg: (m) => this.onPower(m),
     });
+    if (!this.demo) this.net.invite = this.readInvite();
     this.net.join(this.demo ? { play: false } : { junction: this.jid, play: false });
   }
+  /** An invite link carries ?r=ROOM&i=INVITER. Keep it for the visit, even if the player browses to another page and back. */
+  private readInvite(): { room: string; by: string } | null {
+    try {
+      const q = new URLSearchParams(location.search), room = q.get("r"), by = q.get("i") ?? "";
+      if (room && /^[\w-]{1,24}$/.test(room) && /^[\w-]{0,12}$/.test(by)) sessionStorage.setItem("nh:inv", JSON.stringify({ room, by }));
+      const raw = sessionStorage.getItem("nh:inv"); return raw ? JSON.parse(raw) : null;
+    } catch { return null; }
+  }
+  /** Room and player id, for building an invite link that drops a friend into this room. */
+  getShareInfo() { return { room: this.roomId, id: this.net?.id ?? "" }; }
+  /** This visit's totals, for the result card. */
+  getSession() { return { sales: this.cur.sales, earned: this.cur.earned, hits: this.cur.hits, junction: this.jid }; }
+
+  // ---------- power-ups ----------
+  private fx(kind: Fx["kind"], x: number, y: number, color: string, dur = 0.7) { this.fxs.push({ kind, x, y, t: 0, dur, color }); }
+  private pop(x: number, y: number, text: string, color: string) { this.pops.push({ x, y, t: 0, text, color }); }
+  private peerOf(id: string) { return this.peers.get(id); }
+
+  private onPower(m: any) {
+    const me = this.net?.id;
+    switch (m.type) {
+      case "pickup":
+        if (m.op === "spawn") this.pickups.push({ id: m.p.id, kind: m.p.kind, x: m.p.x, y: m.p.y, left: m.p.ttl, max: m.p.ttl });
+        else { this.pickups = this.pickups.filter((p) => p.id !== m.id); if (m.by && m.by !== me) { const q = this.peerOf(m.by); if (q) this.pop(q.x, q.y - 80, "Grabbed!", "#cfcfd6"); } }
+        return;
+      case "held": {
+        const had = this.held; this.held = m.kind;
+        if (m.kind && m.kind !== had) {
+          const meta = POWERS[m.kind as PowerKind]; sfx.pickup(); this.fx("gain", this.px, this.py, meta.color);
+          this.pop(this.px, this.py - 84, `${meta.icon} ${meta.name}`, meta.color);
+        }
+        return;
+      }
+      case "shield": { const q = this.peerOf(m.id); if (q) q.shield = !!m.on; return; }
+      case "trap":
+        if (m.op === "add") { this.traps = this.traps.filter((t) => !(t.id === "tmp" && m.t.by === me)); this.traps.push({ ...m.t, t: m.t.by === me ? 0.25 : 0 }); }
+        else this.traps = this.traps.filter((t) => t.id !== m.id);
+        return;
+      case "deny": this.boostT = 0; this.traps = this.traps.filter((t) => t.id !== "tmp"); return;
+      case "fx": return this.onFx(m);
+    }
+  }
+  private onFx(m: any) {
+    const me = this.net?.id;
+    if (m.kind === "boost") { if (m.by === me) this.boostT = m.ms / 1000; else { const q = this.peerOf(m.by); if (q) q.boostT = m.ms / 1000; } return; }
+    if (m.kind === "shieldpop") {
+      if (m.id === me) { this.fx("pop", this.px, this.py, "#ffd84a"); } else { const q = this.peerOf(m.id); if (q) { q.shield = false; this.fx("pop", q.x, q.y, "#ffd84a"); } }
+      return;
+    }
+    if (m.kind === "horn") {
+      if (m.by !== me) { this.fx("wave", m.x, m.y, "#ff7a59", 0.8); sfx.horn("danfo", m.x, 0.8); }
+      for (const id of m.hit as string[]) {
+        if (id === me) { this.stunT = m.ms / 1000; this.cancelAction(); if (this.pstate !== "walk") this.pstate = "idle"; this.pop(this.px, this.py - 84, "STUNNED!", "#ff8a80"); sfx.nope(); }
+        else { const q = this.peerOf(id); if (q) q.stunT = m.ms / 1000; }
+      }
+      for (const id of m.blocked as string[]) {
+        if (id === me) { this.fx("pop", this.px, this.py, "#ffd84a"); this.pop(this.px, this.py - 84, "BLOCKED!", "#ffd84a"); }
+        else { const q = this.peerOf(id); if (q) { q.shield = false; this.fx("pop", q.x, q.y, "#ffd84a"); } }
+      }
+      return;
+    }
+    if (m.kind === "trap") {
+      const mine = m.victim === me, q = this.peerOf(m.victim), x = mine ? this.px : q?.x ?? m.x, y = mine ? this.py : q?.y ?? m.y;
+      if (m.blocked) { this.fx("pop", x, y, "#ffd84a"); if (mine) this.pop(x, y - 84, "BLOCKED!", "#ffd84a"); else if (q) q.shield = false; return; }
+      this.fx("splat", m.x, m.y, "#c49a6c", 0.7); sfx.thud();
+      if (mine) { this.slowT = m.ms / 1000; this.pop(x, y - 84, "Pothole! Slowed", "#ffb347"); } else if (q) q.slowT = m.ms / 1000;
+    }
+  }
+
+  /** Tap the slot in the corner: use what you hold. The effect starts at once; the server confirms (or sends "deny"). */
+  private useHeld() {
+    const k = this.held; if (!k || !POWERS[k].usable || !this.net?.connected) return;
+    this.held = null;
+    if (k === "boost") { this.boostT = 8; this.fx("gain", this.px, this.py, POWERS.boost.color); this.pop(this.px, this.py - 84, "ZOOM!", "#5cff9a"); }
+    else if (k === "pothole") this.traps.push({ id: "tmp", x: this.px, y: Math.min(362, Math.max(174, this.py)), by: this.net.id, t: 0 });
+    else { this.fx("wave", this.px, this.py, "#ff7a59", 0.8); this.pop(this.px, this.py - 84, "PEEEN!", "#ff7a59"); sfx.horn("danfo", this.px, 1); }
+    this.net.use();
+  }
+  /** Run over a pickup and ask the server for it. */
+  private touchPickups() {
+    if (this.held || this.stunT > 0) return;
+    for (const p of this.pickups) {
+      if (p.pending || Math.abs(this.px - p.x) > 30 || Math.abs(this.py - p.y) > 26) continue;
+      p.pending = true; sfx.pickup(); this.net?.grab(p.id);
+    }
+  }
+  private updatePower(dt: number) {
+    this.boostT -= dt; this.slowT -= dt; this.stunT -= dt;
+    for (const p of this.pickups) p.left -= dt;
+    for (const t of this.traps) t.t += dt;
+    for (const f of this.fxs) f.t += dt;
+    this.fxs = this.fxs.filter((f) => f.t < f.dur);
+    for (const q of this.peers.values()) { if (q.boostT) q.boostT -= dt; if (q.stunT) q.stunT -= dt; if (q.slowT) q.slowT -= dt; }
+    if (!this.playing || this.demo) return;
+    this.touchPickups();
+  }
+  private drawPowerBelow(c: CanvasRenderingContext2D, items: { key: number; paint: () => void }[]) {
+    for (const p of this.pickups) items.push({ key: p.y + 20, paint: () => drawPickup(c, p, this.t) });
+    for (const tr of this.traps) items.push({ key: tr.y - 30, paint: () => drawTrap(c, tr, this.t) });
+  }
+  /** The slot beside the player count: the name and icon of what you hold. Tap it to use it. */
+  private drawHeld() {
+    if (!this.playing || this.demo || !this.held) return;
+    const m = POWERS[this.held], c = this.ctx, w = 232, x = W - 130 - 10 - w, y = H - 40;
+    this.panel(x, y, w, 32, "rgba(27,27,34,.9)");
+    c.strokeStyle = m.color; c.lineWidth = 3; c.beginPath(); c.roundRect(x, y, w, 32, 12); c.stroke();
+    c.font = "20px sans-serif"; c.textAlign = "left"; c.textBaseline = "alphabetic"; c.fillStyle = "#fff"; c.fillText(m.icon, x + 8, y + 24);
+    this.text(m.name.toUpperCase(), x + 38, y + 21, 17, m.color);
+    c.font = "bold 11px sans-serif"; c.textAlign = "right"; c.fillStyle = "#cfcfd6"; c.fillText(m.hint, x + w - 8, y + 21);
+  }
+
   private onRoster(r: RoomInfo) {
     this.cap = r.cap;
     const me = this.net?.id;
@@ -141,20 +259,26 @@ export class JunctionScene {
     for (const q of r.players) {
       if (q.id === me) continue;
       const old = this.peers.get(q.id);
-      next.set(q.id, old ?? { id: q.id, name: q.name, avatar: { ...this.avatar, ...(q.avatar ?? {}) }, x: 300, y: HOME_Y, tx: 300, ty: HOME_Y, s: "idle" });
+      if (old) old.shield = !!q.shield;
+      next.set(q.id, old ?? { id: q.id, name: q.name, avatar: { ...this.avatar, ...(q.avatar ?? {}) }, x: 300, y: HOME_Y, tx: 300, ty: HOME_Y, s: "idle", shield: !!q.shield });
     }
     this.peers = next;
     if (this.demo && next.size > 0 && this.pstate !== "idle") { this.cancelAction(); this.pstate = "idle"; } // real players take over from the bot
     if (r.room !== this.roomId) { // moved room (or the first one): reseed so we see this room's cars
       this.roomId = r.room;
       if (r.junction && r.junction !== this.jid && (JUNCTIONS as Record<string, unknown>)[r.junction]) this.jid = r.junction as JunctionId;
-      this.needSync = true; this.claimV = null;
+      this.needSync = true; this.claimV = null; this.pickups = []; this.traps = []; this.held = null;
       if (this.pstate === "wait") this.pstate = "idle";
       this.notify();
     }
   }
   private vehByKey(key: string) { return this.vehs.find((v) => v.key === key); }
   private onClaimResult(key: string, winner: string) {
+    if (key.startsWith("pk:")) { // a power-up race
+      const p = this.pickups.find((x) => "pk:" + x.id === key);
+      if (p && winner !== this.net?.id) { p.pending = false; if (winner === "") this.pickups = this.pickups.filter((x) => x !== p); this.pop(this.px, this.py - 84, "Too late!", "#cfcfd6"); sfx.nope(); }
+      return;
+    }
     const v = this.vehByKey(key); if (v) v.taken = true;
     if (!this.claimV || this.claimV.key !== key) return;
     const mine = this.claimV; this.claimV = null;
@@ -450,7 +574,10 @@ export class JunctionScene {
       if (inRect(r.sell)) { this.settle(false); return; }
       if (inRect(r.push)) { this.settle(true); return; }
     }
-    if (this.lockT > 0) return; // knocked down
+    if (this.held && POWERS[this.held].usable && x > W - 380 && y > H - 80) { this.useHeld(); return; } // the power-up slot
+    if (this.lockT > 0 || this.stunT > 0) return; // knocked down or stunned
+    const pk = this.pickups.find((p) => !p.pending && Math.abs(p.x - x) < 40 && Math.abs(p.y - y) < 44);
+    if (pk && !this.held) { this.stand(pk.x, pk.y); return; } // run for the power-up
     // tapping the pavement sends you back there, out of the traffic
     if (y > BOTTOM + 8) { this.retreat(x, y); return; }
     if (this.pstate === "pause") return;
@@ -562,6 +689,7 @@ export class JunctionScene {
     this.pops = this.pops.filter((p) => p.t < 1.1);
     if (this.notice && (this.notice.t += dt) >= this.notice.dur) this.notice = null;
     this.inv -= dt; this.lockT -= dt;
+    this.updatePower(dt);
     this.syncLight();
     if (this.phase === "green") { this.greenT += dt; if (this.holding) this.updateJam(); }
     if (this.botOn()) this.botUpdate(dt);
@@ -638,7 +766,9 @@ export class JunctionScene {
   }
 
   private updatePlayer(dt: number) {
-    if (this.pstate === "wait") { // waiting for the server to pick the seller
+    const spd = PLAYER_SPEED * (this.boostT > 0 ? BOOST_SPEED : 1) * (this.slowT > 0 ? SLOW_SPEED : 1);
+    if (this.stunT > 0) { /* stunned: frozen on the spot, but a car can still get you */ }
+    else if (this.pstate === "wait") { // waiting for the server to pick the seller
       if ((this.claimT -= dt) <= 0 && this.claimV) { const v = this.claimV; this.claimV = null; this.reallyArrive(v); }
     } else if (this.pstate === "pause") {
       this.pauseT -= dt;
@@ -650,7 +780,7 @@ export class JunctionScene {
         const tx = v.x - v.w * 0.3, ty = groundOf(v) + 14;
         const d = Math.hypot(tx - this.px, ty - this.py);
         if (d < 8) this.arrive(v);
-        else { this.px += ((tx - this.px) / d) * PLAYER_SPEED * dt; this.py += ((ty - this.py) / d) * PLAYER_SPEED * dt; }
+        else { this.px += ((tx - this.px) / d) * spd * dt; this.py += ((ty - this.py) / d) * spd * dt; }
       }
     } else if (this.pstate === "haggle" && this.haggle) {
       this.haggle.t += dt;
@@ -658,7 +788,7 @@ export class JunctionScene {
     } else if (this.pstate === "walk") {
       const d = Math.hypot(this.dest.x - this.px, this.dest.y - this.py);
       if (d < 5) { this.pstate = "idle"; this.walkMul = 1; }
-      else { const s = Math.min(d, PLAYER_SPEED * 1.15 * this.walkMul * dt); this.px += ((this.dest.x - this.px) / d) * s; this.py += ((this.dest.y - this.py) / d) * s; }
+      else { const s = Math.min(d, spd * 1.15 * this.walkMul * dt); this.px += ((this.dest.x - this.px) / d) * s; this.py += ((this.dest.y - this.py) / d) * s; }
     }
     // green light danger: a moving car hits you
     if (this.inv <= 0 && this.inRoad()) {
@@ -673,13 +803,18 @@ export class JunctionScene {
   private alert(text: string) { this.notice = { text, t: 0, dur: 5 }; }
 
   private hit() {
+    if (this.held === "shield") { // God's Blessing takes the hit
+      this.held = null; this.inv = 0.6; this.net?.shieldHit();
+      this.fx("pop", this.px, this.py, "#ffd84a"); this.pop(this.px, this.py - 84, "BLOCKED!", "#ffd84a"); sfx.nope();
+      return;
+    }
     const loss = Math.min(this.money, 50); this.money -= loss; this.opts.sync?.hit();
     const lost = this.loseRandomItem();
     this.cur.hits++; this.cur.earned -= loss; this.streak = 0; sfx.hit(this.px);
     this.pops.push({ x: this.px, y: this.py - 80, t: 0, text: "Ouch!", color: "#ff8a80" });
     this.alert(`HIT! You lost ${naira(loss)}${lost ? ` and 1 ${ITEMS[lost].name.toLowerCase()}` : ""}`);
     this.cancelAction(); // thrown off the road onto the pavement, too fast to steer
-    this.pstate = "walk"; this.dest = { x: this.px, y: HOME_Y }; this.walkMul = 4; this.pauseT = 0; this.lockT = 1; this.inv = 1.6;
+    this.pstate = "walk"; this.dest = { x: this.px, y: HOME_Y }; this.walkMul = 4; this.pauseT = 0; this.lockT = 1; this.inv = 0.35; // just long enough to leave the road: go straight back and you can be hit again
     this.notify();
   }
 
@@ -735,6 +870,7 @@ export class JunctionScene {
     const items: D[] = [];
     for (const a of this.ambient) items.push({ key: groundOf(a), paint: () => this.paintMoving(a, true) });
     for (const v of this.vehs) items.push({ key: groundOf(v), paint: () => this.paintMoving(v, v.st !== "stopped") });
+    this.drawPowerBelow(c, items);
     for (const q of this.peers.values()) items.push({ key: q.y + 14, paint: () => this.drawPeer(q) });
     if (this.playing && (!this.demo || this.botOn())) items.push({ key: this.py + 14, paint: () => this.drawPlayer() });
     if (wkind === "lastma") for (const o of OFFICER_SPOTS) items.push({ key: o.y, paint: () => drawOfficer(c, o.x, o.y, this.t, o.id, wk) });
@@ -744,22 +880,32 @@ export class JunctionScene {
     drawWeatherFront(c, wkind, this.t, wk);
     this.drawTells();
     this.drawRadioTag();
+    for (const f of this.fxs) drawFx(c, f);
     this.drawPops();
     if (this.haggle) this.drawHaggle(this.haggle);
     this.drawHud();
+    this.drawHeld();
   }
 
   private drawPeer(q: Peer) {
     const c = this.ctx, moving = q.s === "running" || q.s === "walk";
+    if ((q.slowT ?? 0) > 0) drawMud(c, q.x, q.y, this.t);
+    if ((q.boostT ?? 0) > 0) drawBoostFx(c, q.x, q.y, this.t);
     drawAvatar(c, q.x, q.y, q.avatar, this.t, 1.05, moving);
+    if ((q.stunT ?? 0) > 0) drawStars(c, q.x, q.y, this.t);
+    if (q.shield) drawShieldAura(c, q.x, q.y, this.t);
     if (q.name) this.text(q.name, q.x, q.y - 66, 14, "#ffffff", "center");
   }
 
   private drawPlayer() {
     const c = this.ctx;
     if (this.inv > 0 && Math.floor(this.t * 12) % 2) c.globalAlpha = 0.45;
-    drawAvatar(c, this.px, this.py, this.avatar, this.t, 1.05, this.pstate === "running" || this.pstate === "walk");
+    if (this.slowT > 0) drawMud(c, this.px, this.py, this.t);
+    if (this.boostT > 0) drawBoostFx(c, this.px, this.py, this.t);
+    drawAvatar(c, this.px, this.py, this.avatar, this.t, 1.05, (this.pstate === "running" || this.pstate === "walk") && this.stunT <= 0);
     c.globalAlpha = 1;
+    if (this.stunT > 0) drawStars(c, this.px, this.py, this.t);
+    if (this.held === "shield") drawShieldAura(c, this.px, this.py, this.t);
   }
 
   /** Floating hint above stopped cars: keen buyers show what they want, "maybe" buyers show a question mark. */

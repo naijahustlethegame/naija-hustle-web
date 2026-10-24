@@ -196,7 +196,7 @@ function Controls({ scene, snap, unlocks, sellers, beforeBuy, onBought }: { scen
         </div>
       )}
 
-      {open === "invite" && <InviteSheet onClose={() => setOpen(null)} />}
+      {open === "invite" && <InviteSheet scene={scene} onClose={() => setOpen(null)} />}
 
       <div className="dock-row">
         <button className={"dock-btn" + (locOk ? " done" : "") + (next === 1 ? " blink" : "")} onClick={() => toggle("loc")} aria-expanded={open === "loc"}>
