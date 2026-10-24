@@ -261,34 +261,32 @@ h3 { font-size: 1.5rem; }
 .dock-why { margin: 8px 0 0; font-weight: 700; }
 .dock > .dock-why { padding: 8px 12px; border-radius: 12px; background: var(--red); color: #fff; }
 
-/* Sellers and Invite (second dock row). Append to the end of your stylesheet.
-   Desktop already works: .dock-btn.mini spans 2 of the 4 columns, so the two buttons are equal halves under the main row.
-   On a phone each half is only ~150px wide, so the label stacks above the small text instead of sitting beside it. */
-/* Append to the end of your stylesheet. */
-
-/* The dock no longer floats over the street: it sits in the page under it, and the player scrolls down to it. */
-.dock { position: relative; bottom: auto; z-index: auto; }
-
-/* The Location, Tray and Invite menus open in the page, just above the dock buttons, instead of floating over the street. */
-.sheet { position: static; left: auto; right: auto; bottom: auto; max-height: none; overflow: visible; margin-bottom: 10px; }
-
-/* Phone, portrait: the menus become a bottom sheet. It is never taller than about two thirds of the screen,
-   it scrolls inside itself, and its header and buttons stay put, so the street stays visible above it. */
-@media (max-width: 700px) {
-  .sheet {
-    position: fixed; left: 0; right: 0; bottom: 0; top: auto; z-index: 60; margin: 0; padding: 0 14px 14px;
-    max-height: 64vh; max-height: 64dvh; overflow-y: auto; overscroll-behavior: contain;
-    border-width: 3px 0 0; border-radius: 20px 20px 0 0; box-shadow: 0 -10px 0 rgba(27, 27, 34, 0.18);
-  }
-  .sheet-head { position: sticky; top: 0; z-index: 2; margin: 0 -14px 10px; padding: 14px 14px 8px; background: var(--paper); }
-  .sheet-foot { position: sticky; bottom: 0; z-index: 2; margin: 14px -14px 0; padding: 10px 14px calc(10px + env(safe-area-inset-bottom)); background: var(--paper); border-top: 3px solid var(--tar); }
-  .invite-sheet { max-width: none; margin-left: 0; }
-}
-
-/* Sellers and Invite (second dock row). Desktop already works: .dock-btn.mini spans 2 of the 4 columns,
-   so the two buttons are equal halves under the main row.
-   On a phone each half is only ~150px wide, so the label stacks above the small text instead of sitting beside it. */
-.dock-btn.mini span { line-height: 1.1; }
-@media (max-width: 700px) {
-  .dock-btn.mini { flex-direction: column; align-items: flex-start; justify-content: center; gap: 1px; padding: 7px 12px; }
-}
+/* sellers page */
+.sellers-top .sum { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin: 0; }
+.sellers-top .sum div { border: 3px solid var(--tar); border-radius: 14px; padding: 10px 12px; background: #fff6d6; }
+.sellers-top .sum .wait { background: var(--danfo); }
+.sellers-top dt { font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; }
+.sellers-top dd { font-family: var(--display); font-size: 1.8rem; line-height: 1.1; }
+@media (max-width: 560px) { .sellers-top .sum { grid-template-columns: 1fr; } .sellers-top dd { font-size: 1.5rem; } }
+.shift { margin-top: 14px; }
+.shift-bar { height: 12px; border: 3px solid var(--tar); border-radius: 99px; background: #fff; overflow: hidden; }
+.shift-bar i { display: block; height: 100%; background: var(--go); transition: width 0.5s; }
+.shift-bar i.full { background: var(--red); }
+.shift p { margin-top: 6px; font-size: 0.95rem; font-weight: 700; }
+.collect .btn.big { font-size: 1.25rem; padding: 16px 28px; }
+.collect .btn.blink { animation: nudge 1s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { .collect .btn.blink { animation: none; } }
+.hire-grid { list-style: none; padding: 0; display: grid; gap: 14px; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); margin-top: 10px; }
+.hire-card { display: grid; grid-template-columns: 3rem 1fr; gap: 6px 12px; align-items: start; padding: 14px; border: 3px solid var(--tar); border-radius: 16px; background: #fff; }
+.hire-card.owned { background: #e8f7ee; }
+.hire-card.best { background: var(--danfo); box-shadow: 4px 4px 0 var(--tar); }
+.hire-card .btn, .hire-card .working { grid-column: 1 / -1; text-align: center; }
+.hire-card .btn { padding: 12px 18px; }
+.badge { display: grid; place-items: center; width: 3rem; height: 3rem; border-radius: 50%; border: 3px solid var(--tar); color: #fff; font-family: var(--display); font-size: 1.5rem; text-shadow: 0 1px 0 rgba(0,0,0,.4); }
+.hire-main h3 { font-size: 1.4rem; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.hire-main .skill { font: 700 0.7rem var(--body); text-transform: uppercase; letter-spacing: 0.06em; padding: 2px 8px; border: 2px solid var(--tar); border-radius: 99px; background: #fff; }
+.hire-blurb { margin: 2px 0 8px; font-size: 0.95rem; }
+.hire-facts { display: flex; gap: 18px; flex-wrap: wrap; margin: 0; }
+.hire-facts dt { font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; }
+.hire-facts dd { font-family: var(--display); font-size: 1.25rem; line-height: 1.1; }
+.working { color: var(--go); font-weight: 700; padding: 10px 0 2px; }
