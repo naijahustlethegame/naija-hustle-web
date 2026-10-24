@@ -56,6 +56,7 @@ export default function SellersBase() {
           <button className="btn" onClick={collect} disabled={busy || waiting <= 0}>
             {waiting > 0 ? `Collect ${naira(waiting)}` : "Nothing to collect yet"}
           </button>
+          
         </div>
       </section>
 
