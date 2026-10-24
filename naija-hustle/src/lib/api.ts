@@ -90,3 +90,32 @@ export async function getTop(): Promise<Row[]> {
 }
 export const getMe = async (): Promise<Me> => { const m = await call<Me>("/leaderboard/me"); return { ...m, money: Number(m.money) }; };
 export const setName = async (name: string): Promise<string> => (await call<{ name: string }>("/leaderboard/name", "POST", { name })).name;
+
+/** Admin stats. Needs the ADMIN_STATS_KEY from the server's environment, not a player session. */
+type N<K extends string> = Record<K, string> & { n: number };
+export type AdminStats = {
+  generated_at: string;
+  players: { total: number; new_24h: number; new_7d: number; active_1h: number; active_24h: number; active_7d: number; returned: number };
+  signups_by_day: { day: string; n: number }[];
+  economy: { total_money: number; avg_money: number; median_money: number; max_money: number; broke: number };
+  wealth_buckets: { label: string; n: number }[];
+  top_players: { player_no: number; name: string; money: number; junction: string; junctions: number; sellers: number; updated_at: string }[];
+  by_junction: N<"junction">[];
+  junction_unlocks: (N<"junction"> & { price: number })[];
+  item_unlocks: N<"item">[];
+  items_held: N<"item">[];
+  sellers: { hired_total: number; players_with_any: number; hired_24h: number; spent: number; income_per_min: number; by_seller: (N<"seller"> & { price: number; perMin: number })[] };
+  runs: { running: number; banked_waiting: number; cash_in_pots: number; avg_level: number; by_market: N<"market">[] };
+  spend: { sellers: number; junctions: number; total: number };
+  recent_signups: { player_no: number; name: string; junction: string; created_at: string }[];
+  recent_activity: { player_no: number; name: string; junction: string; money: number; updated_at: string }[];
+  referrals: { total: number; qualified: number; paid_out: number } | null;
+  live: { online: number; rooms: number; seated: number; watching: number; cap: number; byJunction: Record<string, { rooms: number; seated: number }>; list: { id: string; junction: string; seated: number; watching: number }[] };
+};
+export async function getAdminStats(key: string): Promise<AdminStats> {
+  const r = await fetch(`${API}/admin/stats`, { cache: "no-store", headers: { "x-admin-key": key } });
+  if (r.status === 401) throw new ApiError(401, "Wrong key");
+  if (r.status === 503) throw new ApiError(503, "Stats are not enabled on the server");
+  if (!r.ok) throw new ApiError(r.status, "Could not load stats");
+  return r.json();
+}

@@ -1,0 +1,47 @@
+.link { font: inherit; font-weight: 700; text-decoration: underline; background: none; border: 0; padding: 0; cursor: pointer; color: inherit; }
+.stats { margin-top: 8px; }
+.stats h1 { font-size: clamp(2.4rem, 7vw, 4rem); text-transform: uppercase; line-height: 0.95; }
+.stats-head { display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: 8px 16px; }
+.stats-meta { display: flex; gap: 14px; align-items: center; font-weight: 700; }
+.stats .why { margin-top: 14px; padding: 10px 14px; background: var(--red); color: #fff; border-radius: 12px; font-weight: 700; }
+
+.gate { display: flex; flex-direction: column; gap: 10px; max-width: 26rem; margin-top: 20px; padding: 18px; background: var(--paper); border: 3px solid var(--tar); border-radius: 18px; box-shadow: 5px 5px 0 var(--tar); }
+.gate label { font-family: var(--display); letter-spacing: 0.04em; }
+.gate input { padding: 10px 14px; border: 3px solid var(--tar); border-radius: 12px; font: 700 1.05rem var(--body); }
+.gate .btn { align-self: flex-start; }
+
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(10.5rem, 1fr)); gap: 12px; margin-top: 22px; }
+.tile { display: flex; flex-direction: column; gap: 2px; padding: 12px 14px; background: var(--paper); border: 3px solid var(--tar); border-radius: 14px; box-shadow: 4px 4px 0 var(--tar); min-width: 0; }
+.t-label { font-family: var(--display); letter-spacing: 0.05em; font-size: 0.9rem; opacity: 0.7; text-transform: uppercase; }
+.t-value { font-family: var(--display); font-weight: 400; font-size: 1.9rem; line-height: 1.05; overflow-wrap: anywhere; }
+.tile small { font-weight: 700; opacity: 0.7; }
+
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 24rem), 1fr)); gap: 18px; margin-top: 22px; align-items: start; }
+.card { padding: 16px 18px 18px; background: var(--paper); border: 3px solid var(--tar); border-radius: 18px; box-shadow: 5px 5px 0 var(--tar); min-width: 0; overflow-x: auto; }
+.card h2 { font-size: 1.7rem; text-transform: uppercase; }
+.card h3 { font-size: 1.1rem; margin: 16px 0 6px; letter-spacing: 0.04em; text-transform: uppercase; opacity: 0.75; }
+.card-note { font-size: 0.9rem; font-weight: 700; opacity: 0.65; margin-top: 2px; }
+.empty { margin-top: 10px; font-weight: 700; opacity: 0.65; }
+.mini { display: grid; grid-template-columns: repeat(auto-fit, minmax(7rem, 1fr)); gap: 8px; margin: 12px 0 4px; }
+.mini .tile { box-shadow: none; border-width: 2px; padding: 8px 10px; }
+.mini .t-value { font-size: 1.35rem; }
+
+.bars { list-style: none; padding: 0; margin: 10px 0 0; display: flex; flex-direction: column; gap: 6px; }
+.bars li { display: grid; grid-template-columns: 9.5rem 1fr auto; gap: 10px; align-items: center; font-weight: 700; font-size: 0.95rem; }
+.b-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.b-track { height: 10px; border-radius: 5px; background: rgba(27, 27, 34, 0.12); overflow: hidden; }
+.b-track i { display: block; height: 100%; background: var(--go); border-radius: 5px; }
+.b-n { font-family: var(--display); font-size: 1.1rem; text-align: right; }
+
+.spark { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 4px; height: 120px; align-items: end; margin-top: 8px; }
+.s-col { display: flex; flex-direction: column; justify-content: end; align-items: center; height: 100%; gap: 2px; min-width: 0; }
+.s-col i { display: block; width: 100%; background: var(--go); border-radius: 4px 4px 0 0; }
+.s-n { font-size: 0.75rem; font-weight: 700; min-height: 1em; }
+.s-d { font-size: 0.7rem; font-weight: 700; opacity: 0.6; }
+
+.tbl { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 0.95rem; }
+.tbl th { text-align: left; font-family: var(--display); font-weight: 400; letter-spacing: 0.04em; text-transform: uppercase; font-size: 0.85rem; opacity: 0.65; padding: 4px 8px 4px 0; white-space: nowrap; }
+.tbl td { padding: 6px 8px 6px 0; border-top: 2px dashed rgba(27, 27, 34, 0.25); font-weight: 700; white-space: nowrap; }
+.tbl small { opacity: 0.55; }
+
+@media (max-width: 520px) { .bars li { grid-template-columns: 6.5rem 1fr auto; } }
