@@ -93,6 +93,8 @@ export const setName = async (name: string): Promise<string> => (await call<{ na
 
 /** Admin stats. Needs the ADMIN_STATS_KEY from the server's environment, not a player session. */
 type N<K extends string> = Record<K, string> & { n: number };
+export type RunTally<T> = T & { started: number; completed: number; failed: number };
+export type RunWindow = RunTally<{ banked: number; forfeited: number; completed_cash: number; banked_cash: number; players_started: number; players_completed: number }>;
 export type AdminStats = {
   generated_at: string;
   players: { total: number; new_24h: number; new_7d: number; active_1h: number; active_24h: number; active_7d: number; returned: number };
@@ -109,6 +111,9 @@ export type AdminStats = {
   spend: { sellers: number; junctions: number; total: number };
   recent_signups: { player_no: number; name: string; junction: string; created_at: string }[];
   recent_activity: { player_no: number; name: string; junction: string; money: number; updated_at: string }[];
+  run_history: { windows: Record<"all" | "h24" | "d7", RunWindow>; by_level: RunTally<{ level: number }>[]; since: string | null };
+  run_by_market: RunTally<{ market: string }>[];
+  run_by_day: RunTally<{ day: string }>[];
   referrals: { total: number; qualified: number; paid_out: number } | null;
   live: { online: number; rooms: number; seated: number; watching: number; cap: number; byJunction: Record<string, { rooms: number; seated: number }>; list: { id: string; junction: string; seated: number; watching: number }[] };
 };

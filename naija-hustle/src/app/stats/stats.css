@@ -45,3 +45,14 @@
 .tbl small { opacity: 0.55; }
 
 @media (max-width: 520px) { .bars li { grid-template-columns: 6.5rem 1fr auto; } }
+
+/* run results */
+.stack { display: flex; flex-direction: column-reverse; width: 100%; border-radius: 4px 4px 0 0; overflow: hidden; }
+.stack i { display: block; width: 100%; min-height: 0; }
+.stack .ok { background: var(--go); }
+.stack .bad { background: var(--red); }
+.legend { display: flex; gap: 8px; align-items: center; margin-top: 6px; font-size: 0.85rem; font-weight: 700; }
+.legend i { display: inline-block; width: 12px; height: 12px; border-radius: 3px; margin-left: 8px; }
+.legend i:first-child { margin-left: 0; }
+.legend .ok { background: var(--go); }
+.legend .bad { background: var(--red); }

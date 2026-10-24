@@ -1,6 +1,6 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
-import { ApiError, getAdminStats, type AdminStats } from "@/lib/api";
+import { ApiError, getAdminStats, type AdminStats, type RunTally } from "@/lib/api";
 import { naira } from "@/game/engine/items";
 
 const KEY = "nh:adminkey";
@@ -45,6 +45,70 @@ function Spark({ rows }: { rows: { day: string; n: number }[] }) {
         </div>
       ))}
     </div>
+  );
+}
+
+/** Share of finished runs that were completed. Runs still going do not count either way. */
+const winRate = (r: { completed: number; failed: number }) => (r.completed + r.failed > 0 ? Math.round((r.completed / (r.completed + r.failed)) * 100) : 0);
+const unfinished = (r: RunTally<object>) => Math.max(0, r.started - r.completed - r.failed);
+
+function RunSpark({ rows }: { rows: { day: string; completed: number; failed: number }[] }) {
+  const max = Math.max(1, ...rows.map((r) => r.completed + r.failed));
+  return (
+    <div className="spark" role="img" aria-label="Completed and caught runs per day, last 14 days">
+      {rows.map((r) => (
+        <div key={r.day} className="s-col" title={`${r.day}: ${r.completed} completed, ${r.failed} caught`}>
+          <span className="s-n">{r.completed + r.failed || ""}</span>
+          <div className="stack" style={{ height: `${Math.max(3, ((r.completed + r.failed) / max) * 100)}%` }}>
+            <i className="ok" style={{ flex: r.completed }} /><i className="bad" style={{ flex: r.failed }} />
+          </div>
+          <span className="s-d">{r.day.slice(8)}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** Market runs from start to finish: how many were completed, caught or left unfinished, and the percentages. */
+function RunResults({ d }: { d: AdminStats }) {
+  const h = d.run_history, a = h.windows.all;
+  const share = (n: number) => pct(n, a.started);
+  const periods: [string, typeof a][] = [["All time", a], ["Last 24h", h.windows.h24], ["Last 7 days", h.windows.d7]];
+  return (
+    <Card title="Run results" note={h.since ? `Counted since ${new Date(h.since).toLocaleDateString("en-NG", { day: "numeric", month: "short" })}. Earlier runs were not recorded.` : "Counting starts with the next run."}>
+      {a.started === 0 ? <p className="empty">No runs recorded yet.</p> : (
+        <>
+          <div className="mini">
+            <Tile label="Started" value={num(a.started)} sub={`${a.players_started} players`} />
+            <Tile label="Completed" value={num(a.completed)} sub={`${share(a.completed)} of started`} />
+            <Tile label="Caught" value={num(a.failed)} sub={`${share(a.failed)} of started`} />
+            <Tile label="Unfinished" value={num(unfinished(a))} sub={`${share(unfinished(a))} of started`} />
+          </div>
+          <p className="card-note">Of runs that ended, <strong>{winRate(a)}%</strong> were completed. Unfinished means still running, or the page was closed.</p>
+
+          <table className="tbl"><thead><tr><th>Period</th><th>Started</th><th>Completed</th><th>Caught</th><th>Completed %</th><th>Caught %</th></tr></thead>
+            <tbody>{periods.map(([name, r]) => <tr key={name}><td>{name}</td><td>{r.started}</td><td>{r.completed}</td><td>{r.failed}</td><td>{pct(r.completed, r.started)}</td><td>{pct(r.failed, r.started)}</td></tr>)}</tbody></table>
+
+          <h3>Completed, by level (of runs that ended)</h3>
+          <Bars fmt={(n) => `${n}%`} rows={h.by_level.map((l) => ({ label: `Level ${l.level} (${l.completed}/${l.completed + l.failed})`, n: winRate(l) }))} />
+
+          <h3>By market</h3>
+          <table className="tbl"><thead><tr><th>Market</th><th>Started</th><th>Completed</th><th>Caught</th><th>Completed</th></tr></thead>
+            <tbody>{d.run_by_market.map((m) => <tr key={m.market}><td>{cap(m.market)}</td><td>{m.started}</td><td>{m.completed}</td><td>{m.failed}</td><td>{winRate(m)}%</td></tr>)}</tbody></table>
+
+          <h3>Per day</h3>
+          <RunSpark rows={d.run_by_day} />
+          <p className="legend"><i className="ok" /> completed <i className="bad" /> caught</p>
+
+          <h3>Cashing out</h3>
+          <div className="mini">
+            <Tile label="Pots banked" value={num(a.banked)} />
+            <Tile label="Cash banked" value={naira(a.banked_cash)} />
+            <Tile label="Thrown away" value={num(a.forfeited)} />
+          </div>
+        </>
+      )}
+    </Card>
   );
 }
 
@@ -170,6 +234,8 @@ export default function StatsView() {
               <h3>By market</h3>
               <Bars rows={d.runs.by_market.map((m) => ({ label: cap(m.market), n: m.n }))} />
             </Card>
+
+            <RunResults d={d} />
 
             <Card title="Progress">
               <h3>Where players are standing</h3>
